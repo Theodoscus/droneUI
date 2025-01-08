@@ -215,7 +215,7 @@ class DroneReportApp(QMainWindow):
 
         # Update the report with aggregated data
         self.update_flight_data(
-            flight_time=output_folder.split("_")[-1],  # Extract timestamp from folder name
+            flight_time=output_folder.split("_"),  # Extract timestamp from folder name
             diseases=unique_diseases,
             plants_analyzed=total_plants,
             affected_plants=affected_plants,
