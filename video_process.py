@@ -22,7 +22,7 @@ def initialize_model(model_path):
 
 def track_and_detect(model, frame):
     """Run YOLO tracking on a single frame."""
-    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True)
+    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.15, augment=True, agnostic_nms=True)
     return results
 
 
@@ -170,7 +170,7 @@ def process_video(video_path, model, output_folder):
 def main():
     """Main function to run plant tracking and disease detection."""
     # Paths
-    video_path = "video2a.mp4"  # Replace with your video path
+    video_path = "video2.mp4"  # Replace with your video path
     model_path = "yolol100.pt"  # Replace with your YOLO model path
 
     # Initialize YOLO model

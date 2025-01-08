@@ -195,22 +195,27 @@ class DroneReportApp(QMainWindow):
         # Load results from the file
         results = pd.read_csv(results_file)
 
-        # Remove duplicates by ID and Class
-        unique_results = results.drop_duplicates(subset=["ID", "Class"])
-
-        # Aggregate statistics
-        unique_diseases = unique_results["Class"].nunique() - (1 if "Healthy" in unique_results["Class"].unique() else 0)
-        total_plants = results["ID"].nunique()  # Count of unique plants analyzed
-        affected_plants = total_plants - unique_results[unique_results["Class"] == "Healthy"]["ID"].nunique()
+        # Retain only the row with the highest confidence for each ID
+        filtered_results = results.loc[results.groupby("ID")["Confidence"].idxmax()]
 
         # Count diseases, ensuring "Healthy" is included
-        disease_counts = unique_results["Class"].value_counts()
+        disease_counts = filtered_results["Class"].value_counts()
+
+        # Add "Healthy" to the disease counts if missing
         if "Healthy" not in disease_counts:
-            disease_counts["Healthy"] = 0  # Add "Healthy" if missing
+            disease_counts["Healthy"] = 0
+
+        # Aggregate statistics
+        total_plants = results["ID"].nunique()  # Count of unique plants analyzed
+        healthy_plants = filtered_results[filtered_results["Class"] == "Healthy"]["ID"].nunique()  # Unique healthy plants
+        affected_plants = total_plants - healthy_plants  # Affected plants are those not healthy
+
+        # Remove "Healthy" from the disease count for unique diseases detected
+        unique_diseases = len(disease_counts) - (1 if "Healthy" in disease_counts else 0)
 
         # Update the report with aggregated data
         self.update_flight_data(
-            flight_time=output_folder.split("_"),  # Extract timestamp from folder name
+            flight_time=output_folder.split("_")[-1],  # Extract timestamp from folder name
             diseases=unique_diseases,
             plants_analyzed=total_plants,
             affected_plants=affected_plants,
@@ -222,6 +227,7 @@ class DroneReportApp(QMainWindow):
         # Load photos of detected objects
         photos_folder = os.path.join(output_folder, "photos")
         self.load_photos(photos_folder)
+
 
 
 
