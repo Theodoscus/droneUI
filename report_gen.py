@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from reportlab.pdfgen import canvas
 from datetime import datetime
 
+
 class DroneReportApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -20,12 +21,13 @@ class DroneReportApp(QMainWindow):
 
         # Header Section
         header_layout = QHBoxLayout()
-        flight_time_label = QLabel("ΠΤΗΣΗ: 16/12/2024 14:31")
-        flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color:  white;")
-        header_layout.addWidget(flight_time_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.flight_time_label = QLabel("ΠΤΗΣΗ: ")
+        self.flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        header_layout.addWidget(self.flight_time_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
         close_button = QPushButton("Κλείσιμο")
         close_button.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px 10px;")
+        close_button.clicked.connect(self.close)
         header_layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         main_layout.addLayout(header_layout)
@@ -35,12 +37,13 @@ class DroneReportApp(QMainWindow):
         stats_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f5f5f5;")
         stats_layout = QGridLayout(stats_frame)
 
-        self.disease_count_label = QLabel("Ασθένειες που εντοπίστηκαν: <b>2 ασθένειες</b>")
-        self.plants_analyzed_label = QLabel("Φυτά που αναλύθηκαν: <b>342 φυτά</b>")
-        self.affected_plants_label = QLabel("Επηρεασμένα φυτά: <b>50</b>")
+        self.disease_count_label = QLabel("Ασθένειες που εντοπίστηκαν: ")
+        self.plants_analyzed_label = QLabel("Φυτά που αναλύθηκαν: ")
+        self.affected_plants_label = QLabel("Επηρεασμένα φυτά: ")
 
         for label in [self.disease_count_label, self.plants_analyzed_label, self.affected_plants_label]:
             label.setStyleSheet("font-size: 16px; padding: 5px; color: black;")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         stats_layout.addWidget(self.disease_count_label, 0, 0)
         stats_layout.addWidget(self.plants_analyzed_label, 0, 1)
@@ -51,10 +54,10 @@ class DroneReportApp(QMainWindow):
         # Bar Chart Section
         self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.figure)
-        self.draw_chart()
 
         chart_frame = QFrame()
         chart_frame.setStyleSheet("border: 1px solid gray; padding: 10px;")
+        chart_frame.setMinimumHeight(400)
         chart_layout = QVBoxLayout(chart_frame)
         chart_layout.addWidget(self.canvas)
         main_layout.addWidget(chart_frame)
@@ -64,9 +67,10 @@ class DroneReportApp(QMainWindow):
         image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
         image_layout = QVBoxLayout(image_frame)
 
-        image_label = QLabel("Φυτά με ασθένειες που εντοπίστηκαν στην πτήση")
-        image_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
-        image_layout.addWidget(image_label)
+        self.image_label = QLabel("Φυτά με ασθένειες που εντοπίστηκαν στην πτήση")
+        self.image_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        image_layout.addWidget(self.image_label)
 
         # Placeholder for Image Carousel
         placeholder_image = QLabel()
@@ -96,42 +100,66 @@ class DroneReportApp(QMainWindow):
 
         main_widget.setLayout(main_layout)
 
-    def draw_chart(self):
-        categories = ["Υγιή Φυτά", "Περίση Μάστιγα", "Όψιμη Μάστιγα"]
-        values = [292, 35, 15]
+    def draw_chart(self, categories=None, values=None):
+        #Δημιουργεί το γράφημα με δεδομένα που παρέχονται.
+        if categories is None:
+            categories = ["Κατηγορία 1", "Κατηγορία 2"]
+        if values is None:
+            values = [0, 0]
+
         self.ax.clear()
-        self.ax.bar(categories, values, color='gray')
+        
+           # Υπολογισμός της μέγιστης τιμής για τον κάθετο άξονα
+        max_value = max(values)
+        y_max = max_value + 100  # Προσθήκη 100 στη μέγιστη τιμή
+
+        # Δημιουργία γραφήματος
+        bars = self.ax.bar(categories, values, color='gray')
+
+        # Ρυθμίσεις τίτλων και αξόνων
         self.ax.set_title("Κατάσταση Φυτών", fontsize=16)
         self.ax.set_ylabel("Αριθμός Φυτών", fontsize=12)
-        self.ax.set_xlabel("Κατηγορίες", fontsize=12)
+        self.ax.set_xticks(range(len(categories)))
+        self.ax.set_xticklabels(categories, rotation=45, ha="right", fontsize=10)
+
+        self.ax.set_ylim(0, y_max)
+        
+        # Εμφάνιση τιμών πάνω από κάθε στήλη
+        for bar, value in zip(bars, values):
+            self.ax.annotate(
+                f'{value}',  # Το κείμενο που θα εμφανιστεί
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),  # Συντεταγμένες
+                xytext=(0, 5),  # Απόσταση από τη στήλη
+                textcoords="offset points",  # Το κείμενο τοποθετείται σχετικά με το σημείο
+                ha='center', va='bottom', fontsize=10  # Κέντρο και μέγεθος γραμματοσειράς
+            )
+
+        # Προσαρμογή διαστήματος για τις ετικέτες
+        self.figure.subplots_adjust(bottom=0.3, top=0.9)
+
+        # Ενημέρωση του καμβά
         self.canvas.draw()
+
+
+    def update_flight_data(self, flight_time, diseases, plants_analyzed, affected_plants):
+        """Ενημερώνει τα δεδομένα της πτήσης."""
+        self.flight_time_label.setText(f"ΠΤΗΣΗ: {flight_time}")
+        self.disease_count_label.setText(f"Ασθένειες που εντοπίστηκαν: {diseases}")
+        self.plants_analyzed_label.setText(f"Φυτά που αναλύθηκαν: {plants_analyzed}")
+        self.affected_plants_label.setText(f"Επηρεασμένα φυτά: {affected_plants}")
 
     def export_to_pdf(self):
         pdf_file = "flight_report.pdf"
         c = canvas.Canvas(pdf_file)
-        
-        # Header
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, 800, "Αναφορά Πτήσης")
         c.setFont("Helvetica", 12)
-        c.drawString(50, 780, f"Ημερομηνία: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-        
-        # Statistics
-        c.drawString(50, 750, "Στατιστικά:")
-        c.drawString(70, 730, f"Ασθένειες που εντοπίστηκαν: 2")
-        c.drawString(70, 710, f"Φυτά που αναλύθηκαν: 342")
-        c.drawString(70, 690, f"Επηρεασμένα φυτά: 50")
-        
-        # Placeholder for chart and images
-        c.drawString(50, 650, "Γράφημα κατάστασης φυτών:")
-        c.rect(50, 500, 500, 100, stroke=1, fill=0)
-        c.drawString(60, 580, "(Το γράφημα θα προστεθεί στο τελικό PDF)")
+        c.drawString(50, 780, f"Ημερομηνία: {self.flight_time_label.text()}")
+        c.drawString(50, 750, f"{self.disease_count_label.text()}")
+        c.drawString(50, 730, f"{self.plants_analyzed_label.text()}")
+        c.drawString(50, 710, f"{self.affected_plants_label.text()}")
         c.save()
         print(f"PDF saved to {pdf_file}")
 
-# Run the Application
-if __name__ == "__main__":
-    app = QApplication([])
-    window = DroneReportApp()
-    window.show()
-    app.exec()
+
+    
