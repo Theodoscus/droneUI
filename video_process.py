@@ -3,6 +3,11 @@ from ultralytics import YOLO
 from tqdm import tqdm
 import os
 from datetime import datetime
+from PyQt6.QtWidgets import QApplication
+from report_gen import DroneReportApp
+import pandas as pd
+import os
+from datetime import datetime
 
 # Global Output Folder
 BASE_OUTPUT_FOLDER = "runs"
@@ -17,16 +22,18 @@ def initialize_model(model_path):
 
 def track_and_detect(model, frame):
     """Run YOLO tracking on a single frame."""
-    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.4, augment=True, agnostic_nms=True)
+    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True)
     return results
 
 
-def process_frame(results, frame, frame_count, output_file, saved_ids, photo_folder):
+def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_folder):
     """Process YOLO results for a single frame."""
-    tracking_data = []
-
     # Process detections in the frame
     for result in results[0].boxes:
+        # Skip untracked objects
+        if result.id is None:
+            continue
+
         box = result.xyxy[0].tolist()  # Bounding box: [x_min, y_min, x_max, y_max]
         conf = result.conf[0].tolist()  # Confidence score
         class_id = int(result.cls[0])  # Class ID
@@ -34,7 +41,7 @@ def process_frame(results, frame, frame_count, output_file, saved_ids, photo_fol
         class_name = results[0].names[class_id]  # Get class name
 
         # Prepare tracking data for saving
-        bbox_str = ",".join(map(str, box))
+        bbox_str = f"{box[0]:.2f},{box[1]:.2f},{box[2]:.2f},{box[3]:.2f}"
         tracking_data.append((frame_count, track_id, class_name, bbox_str, conf))
 
         # Save the first photo for each object by ID
@@ -56,10 +63,8 @@ def process_frame(results, frame, frame_count, output_file, saved_ids, photo_fol
             2,  # Thicker text
         )
 
-    # Save tracking data to file
-    save_tracking_data(tracking_data, output_file)
-
     return frame
+
 
 
 def save_object_photo(frame, box, track_id, class_name, photo_folder):
@@ -78,11 +83,17 @@ def save_object_photo(frame, box, track_id, class_name, photo_folder):
 
 
 def save_tracking_data(tracking_data, output_file):
-    """Save tracking data to a text file."""
-    with open(output_file, "a") as file:
-        for data in tracking_data:
-            frame, track_id, class_name, bbox, conf = data
-            file.write(f"{frame},{track_id},{class_name},{bbox},{conf:.2f}\n")
+    """Save tracking data to a CSV file."""
+    # Convert tracking data to a DataFrame
+    df = pd.DataFrame(tracking_data, columns=["Frame", "ID", "Class", "BBox", "Confidence"])
+    
+    # Save to CSV file
+    if not os.path.exists(output_file):
+        df.to_csv(output_file, index=False, mode="w")  # Create and write the CSV file with a header
+    else:
+        df.to_csv(output_file, index=False, mode="a", header=False)  # Append without duplicating the header
+    print(f"Tracking data saved to {output_file}")
+
 
 
 def create_output_folder(base_folder):
@@ -104,9 +115,9 @@ def process_video(video_path, model, output_folder):
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Create processed video path, text file, and photo folder
+    # Create processed video path, CSV file, and photo folder
     processed_video_path = os.path.join(output_folder, "processed_video.mp4")
-    output_file = os.path.join(output_folder, "tracked_data.txt")
+    output_file = os.path.join(output_folder, "tracked_data.csv")  # CSV file
     photo_folder = os.path.join(output_folder, "photos")
 
     # Initialize video writer
@@ -117,12 +128,9 @@ def process_video(video_path, model, output_folder):
         (frame_width, frame_height),
     )
 
-    # Create output file with header
-    with open(output_file, "w") as file:
-        file.write("Frame,ID,Class,BBox,Confidence\n")
-
     # Set to track saved IDs
     saved_ids = set()
+    tracking_data = []  # Collect tracking data for saving
 
     # Process frames with a loading bar
     print("Processing video...")
@@ -135,23 +143,34 @@ def process_video(video_path, model, output_folder):
         results = track_and_detect(model, frame)
 
         # Process the frame and annotate it
-        annotated_frame = process_frame(results, frame, frame_count, output_file, saved_ids, photo_folder)
+        annotated_frame = process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_folder)
 
         # Write the annotated frame to the processed video
         video_writer.write(annotated_frame)
 
         frame_count += 1
 
+    # Save tracking data to CSV after processing all frames
+    save_tracking_data(tracking_data, output_file)
+
     cap.release()
     video_writer.release()
     print(f"Processing completed. Results saved in {output_folder}")
+    
+    app = QApplication([])
+    report_app = DroneReportApp()
+    report_app.load_results(output_folder)  # Load and display the results
+    report_app.show()
+    app.exec()
+
+
 
 
 
 def main():
     """Main function to run plant tracking and disease detection."""
     # Paths
-    video_path = "video3.mov"  # Replace with your video path
+    video_path = "video2a.mp4"  # Replace with your video path
     model_path = "yolol100.pt"  # Replace with your YOLO model path
 
     # Initialize YOLO model

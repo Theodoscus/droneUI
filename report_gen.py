@@ -6,6 +6,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 from reportlab.pdfgen import canvas
 from datetime import datetime
+import pandas as pd
+import os
+from datetime import datetime
+from PyQt6.QtWidgets import QComboBox
 
 
 class DroneReportApp(QMainWindow):
@@ -25,6 +29,12 @@ class DroneReportApp(QMainWindow):
         self.flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
         header_layout.addWidget(self.flight_time_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
+        self.run_selector = QComboBox()
+        self.run_selector.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px;")
+        self.run_selector.addItems(self.list_previous_runs())
+        self.run_selector.currentTextChanged.connect(self.load_selected_run)
+        header_layout.addWidget(self.run_selector, alignment=Qt.AlignmentFlag.AlignLeft)
+        
         close_button = QPushButton("Κλείσιμο")
         close_button.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px 10px;")
         close_button.clicked.connect(self.close)
@@ -143,10 +153,19 @@ class DroneReportApp(QMainWindow):
 
     def update_flight_data(self, flight_time, diseases, plants_analyzed, affected_plants):
         """Ενημερώνει τα δεδομένα της πτήσης."""
-        self.flight_time_label.setText(f"ΠΤΗΣΗ: {flight_time}")
+        try:
+            # Combine date and time into a single string and parse it
+            combined_time = f"{flight_time[1]}_{flight_time[2]}"  # e.g., "20250109_101230"
+            formatted_time = datetime.strptime(combined_time, "%Y%m%d_%H%M%S").strftime("%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            formatted_time = "Unknown"  # Fallback in case of parsing issues
+
+        # Update the labels
+        self.flight_time_label.setText(f"ΠΤΗΣΗ: {formatted_time}")
         self.disease_count_label.setText(f"Ασθένειες που εντοπίστηκαν: {diseases}")
         self.plants_analyzed_label.setText(f"Φυτά που αναλύθηκαν: {plants_analyzed}")
         self.affected_plants_label.setText(f"Επηρεασμένα φυτά: {affected_plants}")
+
 
     def export_to_pdf(self):
         pdf_file = "flight_report.pdf"
@@ -160,6 +179,105 @@ class DroneReportApp(QMainWindow):
         c.drawString(50, 710, f"{self.affected_plants_label.text()}")
         c.save()
         print(f"PDF saved to {pdf_file}")
+    
+    
+
+    def load_results(self, output_folder):
+        """Loads and displays the results from the video processing."""
+        # Path to the tracked_data.csv file
+        results_file = os.path.join(output_folder, "tracked_data.csv")
+
+        # Check if the results file exists
+        if not os.path.exists(results_file):
+            print(f"Results file not found: {results_file}")
+            return
+
+        # Load results from the file
+        results = pd.read_csv(results_file)
+
+        # Remove duplicates by ID and Class
+        unique_results = results.drop_duplicates(subset=["ID", "Class"])
+
+        # Aggregate statistics
+        unique_diseases = unique_results["Class"].nunique() - (1 if "Healthy" in unique_results["Class"].unique() else 0)
+        total_plants = results["ID"].nunique()  # Count of unique plants analyzed
+        affected_plants = total_plants - unique_results[unique_results["Class"] == "Healthy"]["ID"].nunique()
+
+        # Count diseases, ensuring "Healthy" is included
+        disease_counts = unique_results["Class"].value_counts()
+        if "Healthy" not in disease_counts:
+            disease_counts["Healthy"] = 0  # Add "Healthy" if missing
+
+        # Update the report with aggregated data
+        self.update_flight_data(
+            flight_time=output_folder.split("_"),  # Extract timestamp from folder name
+            diseases=unique_diseases,
+            plants_analyzed=total_plants,
+            affected_plants=affected_plants,
+        )
+
+        # Update the bar chart with unique counts
+        self.draw_chart(categories=disease_counts.index.tolist(), values=disease_counts.values.tolist())
+
+        # Load photos of detected objects
+        photos_folder = os.path.join(output_folder, "photos")
+        self.load_photos(photos_folder)
+
+
+
+
+    def load_photos(self, photos_folder):
+        """Load photos from the photos folder."""
+        if not os.path.exists(photos_folder):
+            print(f"Photos folder not found: {photos_folder}")
+            return
+
+        # Get the list of photo files
+        photo_files = [f for f in os.listdir(photos_folder) if f.endswith(".jpg")]
+
+        # Placeholder: Update with actual image carousel logic
+        if photo_files:
+            self.image_label.setText(f"Loaded {len(photo_files)} photos")
+        else:
+            self.image_label.setText("No photos available")
+
+    def list_previous_runs(self, base_folder="runs"):
+        """List all previous runs from the base folder."""
+        if not os.path.exists(base_folder):
+            print(f"No runs found in {base_folder}")
+            return []
+
+        # Get all run folders sorted by timestamp
+        runs = [f for f in os.listdir(base_folder) if os.path.isdir(os.path.join(base_folder, f))]
+        runs.sort(reverse=True)  # Show the most recent runs first
+        return runs
+
+
+    def load_selected_run(self, selected_run):
+        """Load and display the results from the selected run."""
+        base_folder = "runs"
+        output_folder = os.path.join(base_folder, selected_run)
+
+        # Load results from the selected run
+        if os.path.exists(output_folder):
+            self.load_results(output_folder)
+        else:
+            print(f"Run folder not found: {output_folder}")
+
+    
+if __name__ == "__main__":
+    import sys
+    from PyQt6.QtWidgets import QApplication
+
+    # Create the application
+    app = QApplication(sys.argv)
+
+    # Instantiate and show the DroneReportApp
+    report_app = DroneReportApp()
+    report_app.show()
+
+    # Execute the application
+    sys.exit(app.exec())
 
 
     
