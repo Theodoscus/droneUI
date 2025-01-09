@@ -170,7 +170,7 @@ def process_video(video_path, model, output_folder):
 def main():
     """Main function to run plant tracking and disease detection."""
     # Paths
-    video_path = "video2.mp4"  # Replace with your video path
+    video_path = "video3.mov"  # Replace with your video path
     model_path = "yolol100.pt"  # Replace with your YOLO model path
 
     # Initialize YOLO model
