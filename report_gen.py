@@ -141,8 +141,11 @@ class DroneReportApp(QMainWindow):
         export_pdf_button.clicked.connect(self.export_to_pdf)
         footer_layout.addWidget(export_pdf_button)
 
-        footer_layout.addStretch()
-
+        self.flight_duration_label = QLabel("Διάρκεια Πτήσης: --:--:--")
+        self.flight_duration_label.setStyleSheet("font-size: 14px; color: white; padding: 10px;")
+        self.flight_duration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer_layout.addWidget(self.flight_duration_label)
+        
         countermeasures_button = QPushButton("Τρόποι αντιμετώπισης")
         countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         footer_layout.addWidget(countermeasures_button)
@@ -253,6 +256,7 @@ class DroneReportApp(QMainWindow):
         """Loads and displays the results from the video processing."""
         #Path to the tracked_data.csv file
         self.current_flight_folder = output_folder
+            
         results_file = os.path.join(output_folder, "tracked_data.csv")
         photos_folder = os.path.join(output_folder, "photos")
         #Check if the results file exists
@@ -262,7 +266,9 @@ class DroneReportApp(QMainWindow):
 
         #Load results from the file
         results = pd.read_csv(results_file)
-
+        if "Flight Duration" in results.columns:
+            duration = results["Flight Duration"].iloc[0]
+            self.flight_duration_label.setText(f"Διάρκεια Πτήσης: {duration}")
         #Retain only the row with the highest confidence for each ID
         filtered_results = results.loc[results.groupby("ID")["Confidence"].idxmax()]
 
@@ -421,41 +427,6 @@ class DroneReportApp(QMainWindow):
         # Load the results from the first matching folder
         self.load_results(os.path.join(base_folder, matching_folders[0]))
 
-
-    def create_image_controls(self, image_layout):
-        """Create zoom and full-screen controls."""
-        # Full-Screen Button
-        fullscreen_button = QPushButton("Full Screen")
-        fullscreen_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 5px;")
-        fullscreen_button.clicked.connect(self.show_fullscreen_image)
-        image_layout.addWidget(fullscreen_button)
-
-        # Zoom Slider
-        self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
-        self.zoom_slider.setMinimum(50)  # 50% zoom
-        self.zoom_slider.setMaximum(200)  # 200% zoom
-        self.zoom_slider.setValue(100)  # Default zoom level (100%)
-        self.zoom_slider.valueChanged.connect(self.update_zoom)
-        image_layout.addWidget(self.zoom_slider)
-    
-    def update_zoom(self, value):
-        """Update the zoom level of the displayed image."""
-        if not hasattr(self, 'photo_files') or not self.photo_files:
-            return
-
-        # Get the current photo file
-        photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])
-
-        # Load and scale the image based on the zoom level
-        pixmap = QPixmap(photo_file)
-        if not pixmap.isNull():
-            scaled_pixmap = pixmap.scaled(
-                self.placeholder_image.size() * (value / 100),
-                Qt.AspectRatioMode.KeepAspectRatio
-            )
-            self.placeholder_image.setPixmap(scaled_pixmap)
-        else:
-            self.placeholder_image.setText("Error loading image")
     
     def show_fullscreen_image(self):
         """Display the current image in a zoomable window."""
@@ -532,7 +503,7 @@ class ZoomableImageDialog(QDialog):
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.zoom_slider.setMinimum(50)  # Minimum zoom: 50%
         self.zoom_slider.setMaximum(200)  # Maximum zoom: 200%
-        self.zoom_slider.setValue(100)  # Default zoom: 100%
+        self.zoom_slider.setValue(150)  # Default zoom: 150%
         self.zoom_slider.valueChanged.connect(self.zoom_image)
         layout.addWidget(self.zoom_slider)
 
@@ -551,19 +522,19 @@ class ZoomableImageDialog(QDialog):
         self.graphics_view.scale(scale_factor, scale_factor)  # Apply new scale
 
         
-if __name__ == "__main__":
-    import sys
-    from PyQt6.QtWidgets import QApplication
+# if __name__ == "__main__":
+#     import sys
+#     from PyQt6.QtWidgets import QApplication
 
-    # Create the application
-    app = QApplication(sys.argv)
+#     # Create the application
+#     app = QApplication(sys.argv)
 
-    # Instantiate and show the DroneReportApp
-    report_app = DroneReportApp()
-    report_app.show()
+#     # Instantiate and show the DroneReportApp
+#     report_app = DroneReportApp()
+#     report_app.show()
 
-    # Execute the application
-    sys.exit(app.exec())
+#     # Execute the application
+#     sys.exit(app.exec())
 
 
     

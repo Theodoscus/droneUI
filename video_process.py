@@ -22,7 +22,7 @@ def initialize_model(model_path):
 
 def track_and_detect(model, frame):
     """Run YOLO tracking on a single frame."""
-    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.15, augment=True, agnostic_nms=True)
+    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True)
     return results
 
 
@@ -82,17 +82,18 @@ def save_object_photo(frame, box, track_id, class_name, photo_folder):
 
 
 
-def save_tracking_data(tracking_data, output_file):
-    """Save tracking data to a CSV file."""
+def save_tracking_data(tracking_data, output_file, duration):
+    """Save tracking data to a CSV file, including flight duration."""
     # Convert tracking data to a DataFrame
     df = pd.DataFrame(tracking_data, columns=["Frame", "ID", "Class", "BBox", "Confidence"])
-    
+
+    # Add a duration column
+    df["Flight Duration"] = duration
+
     # Save to CSV file
-    if not os.path.exists(output_file):
-        df.to_csv(output_file, index=False, mode="w")  # Create and write the CSV file with a header
-    else:
-        df.to_csv(output_file, index=False, mode="a", header=False)  # Append without duplicating the header
+    df.to_csv(output_file, index=False, mode="w")  # Always write a new file with a header
     print(f"Tracking data saved to {output_file}")
+
 
 
 
@@ -104,7 +105,7 @@ def create_output_folder(base_folder):
     return run_folder
 
 
-def process_video(video_path, model, output_folder):
+def process_video(video_path, model, output_folder, duration):
     """Process the entire video for plant tracking and disease detection."""
     cap = cv2.VideoCapture(video_path)
     frame_count = 0
@@ -117,7 +118,7 @@ def process_video(video_path, model, output_folder):
 
     # Create processed video path, CSV file, and photo folder
     processed_video_path = os.path.join(output_folder, "processed_video.mp4")
-    output_file = os.path.join(output_folder, "tracked_data.csv")  # CSV file
+    output_file = os.path.join(output_folder, "tracked_data.csv")
     photo_folder = os.path.join(output_folder, "photos")
 
     # Initialize video writer
@@ -130,7 +131,7 @@ def process_video(video_path, model, output_folder):
 
     # Set to track saved IDs
     saved_ids = set()
-    tracking_data = []  # Collect tracking data for saving
+    tracking_data = []
 
     # Process frames with a loading bar
     print("Processing video...")
@@ -151,26 +152,26 @@ def process_video(video_path, model, output_folder):
         frame_count += 1
 
     # Save tracking data to CSV after processing all frames
-    save_tracking_data(tracking_data, output_file)
+    save_tracking_data(tracking_data, output_file, str(duration))
 
     cap.release()
     video_writer.release()
     print(f"Processing completed. Results saved in {output_folder}")
+
     
-    app = QApplication([])
     report_app = DroneReportApp()
     report_app.load_results(output_folder)  # Load and display the results
     report_app.show()
-    app.exec()
+    
 
 
 
 
 
-def main():
+def run(video_path , duration):
     """Main function to run plant tracking and disease detection."""
     # Paths
-    video_path = "video3.mov"  # Replace with your video path
+    
     model_path = "yolol100.pt"  # Replace with your YOLO model path
 
     # Initialize YOLO model
@@ -180,8 +181,8 @@ def main():
     output_folder = create_output_folder(BASE_OUTPUT_FOLDER)
 
     # Process video and track plants
-    process_video(video_path, model, output_folder)
+    process_video(video_path, model, output_folder, duration)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     run()

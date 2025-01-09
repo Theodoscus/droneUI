@@ -1,5 +1,6 @@
 import os
 import cv2
+import sys
 import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QMessageBox, QFileDialog
@@ -8,6 +9,10 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage
 from djitellopy import Tello
 from report_gen import DroneReportApp
+from video_process import run
+FLIGHTS_FOLDER = "flights"
+if not os.path.exists(FLIGHTS_FOLDER):
+    os.makedirs(FLIGHTS_FOLDER)
 
 class MockTello:
     def __init__(self):
@@ -87,15 +92,7 @@ class DroneControlApp(QMainWindow):
         self.land_button.clicked.connect(self.land)
         control_layout.addWidget(self.land_button)
 
-        self.record_button = QPushButton("Έναρξη Εγγραφής")
-        self.record_button.setStyleSheet("padding: 10px; font-size: 14px;")
-        self.record_button.clicked.connect(self.toggle_recording)
-        control_layout.addWidget(self.record_button)
-
-        self.capture_button = QPushButton("Λήψη Φωτογραφίας")
-        self.capture_button.setStyleSheet("padding: 10px; font-size: 14px;")
-        self.capture_button.clicked.connect(self.capture_photo)
-        control_layout.addWidget(self.capture_button)
+        
 
         main_layout.addLayout(control_layout)
 
@@ -194,7 +191,7 @@ class DroneControlApp(QMainWindow):
         self.flight_start_time = datetime.datetime.now()
 
         # Create a folder for the flight
-        self.flight_folder = f"Flight_{self.flight_start_time.strftime('%Y%m%d_%H%M%S')}"
+        self.flight_folder = os.path.join(FLIGHTS_FOLDER, f"Flight_{self.flight_start_time.strftime('%Y%m%d_%H%M%S')}")
         os.makedirs(self.flight_folder, exist_ok=True)
 
         self.start_video_stream()
@@ -213,21 +210,29 @@ class DroneControlApp(QMainWindow):
         duration = flight_end_time - self.flight_start_time
 
         QMessageBox.information(self, "Drone Status", f"Η πτήση ολοκληρώθηκε!\nΔιάρκεια: {duration}")
-        self.show_flight_report(duration)
+
+        # Process the flight video
+        self.process_flight_video(duration)
+
+    def process_flight_video(self, duration):
+        """Process the flight video using video_process.py."""
+        if not self.flight_folder:
+            QMessageBox.warning(self, "Flight Data", "Δεν βρέθηκε φάκελος πτήσης για επεξεργασία!")
+            return
+
+        video_path = os.path.join(self.flight_folder, "flight_video.mp4")
+        if not os.path.exists(video_path):
+            QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
+            return
+
+        # Process the video
+        run(video_path, duration)
+
+        QMessageBox.information(self, "Video Processing", "Η επεξεργασία του βίντεο ολοκληρώθηκε!")
+
+
     
-    def show_flight_report(self, duration):
-        """Displays the flight report window with relevant data."""
-        self.report_window = DroneReportApp()
-        self.report_window.update_flight_data(
-            flight_time=self.flight_start_time.strftime("%d/%m/%Y %H:%M:%S"),
-            diseases="Mock Data: 2 diseases detected",
-            plants_analyzed="Mock Data: 342 plants analyzed",
-            affected_plants="Mock Data: 50 affected plants"
-        )
-        categories = ["Υγιή Φυτά", "Ασθένεια 1", "Ασθένεια 2"]
-        values = [270, 35, 15]
-        self.report_window.draw_chart(categories, values)
-        self.report_window.show()
+    
         
     # def toggle_recording(self):
     #     if not self.is_flying:
@@ -289,4 +294,4 @@ if __name__ == "__main__":
     app = QApplication([])
     window = DroneControlApp()
     window.show()
-    app.exec()
+    sys.exit(app.exec())
