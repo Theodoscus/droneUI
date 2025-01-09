@@ -92,7 +92,10 @@ class DroneControlApp(QMainWindow):
         self.land_button.clicked.connect(self.land)
         control_layout.addWidget(self.land_button)
 
-        
+        self.history_button = QPushButton("Προβολή Ιστορικού Πτήσεων")
+        self.history_button.setStyleSheet("padding: 10px; font-size: 14px;")
+        self.history_button.clicked.connect(self.view_flight_history)
+        control_layout.addWidget(self.history_button)
 
         main_layout.addLayout(control_layout)
 
@@ -109,6 +112,13 @@ class DroneControlApp(QMainWindow):
         # Timer for Video Stream
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_video_feed)
+        
+    def view_flight_history(self):
+        """Open the report window to view flight history."""
+        # Open the flight history report
+        report_window = DroneReportApp()
+        report_window.show()
+
         
     def keyPressEvent(self, event):
             if not self.is_flying:
