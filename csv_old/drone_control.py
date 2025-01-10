@@ -226,28 +226,19 @@ class DroneControlApp(QMainWindow):
 
     def process_flight_video(self, duration):
         """Process the flight video using video_process.py."""
-        # Supported video formats
-        video_formats = [".mp4", ".mov", ".avi"]
+        if not self.flight_folder:
+            QMessageBox.warning(self, "Flight Data", "Δεν βρέθηκε φάκελος πτήσης για επεξεργασία!")
+            return
 
-        # Search for a video file in the flight folder
-        video_path = None
-        for fmt in video_formats:
-            potential_path = os.path.join(self.flight_folder, f"flight_video{fmt}")
-            if os.path.exists(potential_path):
-                video_path = potential_path
-                break
-
-        if video_path:
-            # Process the video using video_process.py
-            try:
-                run(video_path, duration)
-            except Exception as e:
-                QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
-        else:
-            # Show warning if no video is found
+        video_path = os.path.join(self.flight_folder, "flight_video.mp4")
+        if not os.path.exists(video_path):
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
+            return
 
+        # Process the video
+        run(video_path, duration)
 
+        QMessageBox.information(self, "Video Processing", "Η επεξεργασία του βίντεο ολοκληρώθηκε!")
 
 
     

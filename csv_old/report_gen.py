@@ -13,8 +13,6 @@ from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtGui import QPixmap, QPainter
 import subprocess
 import platform
-import sqlite3
-
 
 class DroneReportApp(QMainWindow):
     def __init__(self):
@@ -176,7 +174,6 @@ class DroneReportApp(QMainWindow):
         #Sort folders by timestamp (newest first)
         flight_folders.sort(reverse=True)
         newest_flight = os.path.join(runs_dir, flight_folders[0])
-        print(newest_flight)
 
         #Load the newest flight data to display
         print(f"Loading data from: {newest_flight}")
@@ -184,38 +181,44 @@ class DroneReportApp(QMainWindow):
 
     
     def draw_chart(self, categories=None, values=None):
-        """Create a bar chart with the provided data."""
-        if categories is None or values is None:
-            categories = []
-            values = []
+        #Δημιουργία γραφήματος με δεδομένα που παρέχονται από την πτήση 
+        if categories is None:
+            categories = ["Κατηγορία 1", "Κατηγορία 2"]
+        if values is None:
+            values = [0, 0]
 
         self.ax.clear()
+        
+           #Υπολογισμός της μέγιστης τιμής για τον κάθετο άξονα
+        max_value = max(values)
+        y_max = max_value + 100  #Προσθήκη 100 στη μέγιστη τιμή για καλύτερη προβολή
 
-        # Ensure "Healthy" appears in the chart
-        if "Healthy" not in categories:
-            categories.append("Healthy")
-            values.append(0)
-
-        max_value = max(values) if values else 0
-        y_max = max_value + 100  # Add padding for better visibility
-
+        #Δημιουργία γραφήματος
         bars = self.ax.bar(categories, values, color='gray')
 
-        # Add labels above bars
-        for bar, value in zip(bars, values):
-            self.ax.annotate(f"{value}", xy=(bar.get_x() + bar.get_width() / 2, value),
-                            xytext=(0, 5), textcoords="offset points", ha='center', va='bottom', fontsize=10)
-
+        #Ρυθμίσεις τίτλων και αξόνων
         self.ax.set_title("Κατάσταση Φύλλων", fontsize=16)
         self.ax.set_ylabel("Αριθμός Φύλλων", fontsize=12)
         self.ax.set_xticks(range(len(categories)))
         self.ax.set_xticklabels(categories, rotation=45, ha="right", fontsize=10)
+
         self.ax.set_ylim(0, y_max)
+        
+        #Εμφάνιση τιμών πάνω από κάθε στήλη
+        for bar, value in zip(bars, values):
+            self.ax.annotate(
+                f'{value}',  #Το κείμενο που θα εμφανιστεί
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),  #Συντεταγμένες
+                xytext=(0, 5),  #Απόσταση από τη στήλη
+                textcoords="offset points",  #Το κείμενο τοποθετείται σχετικά με το σημείο
+                ha='center', va='bottom', fontsize=10  #Κέντρο και μέγεθος γραμματοσειράς
+            )
 
+        #Προσαρμογή διαστήματος για τις ετικέτες
         self.figure.subplots_adjust(bottom=0.3, top=0.9)
+
+        #Ενημέρωση του καμβά
         self.canvas.draw()
-
-
 
 
     def update_flight_data(self, flight_time, diseases, plants_analyzed, affected_plants):
@@ -234,24 +237,8 @@ class DroneReportApp(QMainWindow):
         self.affected_plants_label.setText(f"Επηρεασμένα φύλλα: {affected_plants}")
 
 
-    def export_to_pdf(self):
-        """Export the flight report to a PDF."""
-        if not self.current_flight_folder:
-            print("No flight data loaded.")
-            return
-
-        db_path = os.path.join(self.current_flight_folder, "flight_data.db")
-        if not os.path.exists(db_path):
-            print("Database file not found.")
-            return
-
-        conn = sqlite3.connect(db_path)
-        query = "SELECT * FROM flight_results"
-        results = pd.read_sql_query(query, conn)
-        conn.close()
-
-        # Generate the PDF report
-        pdf_file = os.path.join(self.current_flight_folder, "flight_report.pdf")
+    def export_to_pdf(self): #Εξαγωγή σε PDF (δεν έχει ολοκληρωθεί)
+        pdf_file = "flight_report.pdf"
         c = canvas.Canvas(pdf_file)
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, 800, "Αναφορά Πτήσης")
@@ -260,115 +247,95 @@ class DroneReportApp(QMainWindow):
         c.drawString(50, 750, f"{self.disease_count_label.text()}")
         c.drawString(50, 730, f"{self.plants_analyzed_label.text()}")
         c.drawString(50, 710, f"{self.affected_plants_label.text()}")
-
-        # Add disease counts to the PDF
-        disease_counts = results["Class"].value_counts()
-        y_position = 690
-        for disease, count in disease_counts.items():
-            c.drawString(50, y_position, f"{disease}: {count}")
-            y_position -= 20
-
         c.save()
         print(f"PDF saved to {pdf_file}")
-
     
     
 
-    
-    def load_results(self, flight_folder):
-        """Load results from SQLite database and display them."""
-        db_path = os.path.join(flight_folder, "flight_data.db")
-        photos_folder = os.path.join(flight_folder, "photos")
-        self.current_flight_folder = flight_folder  # Store the current flight folder for other functions
-
-        if not os.path.exists(db_path):
-            print(f"Database not found: {db_path}")
+    def load_results(self, output_folder):
+        """Loads and displays the results from the video processing."""
+        #Path to the tracked_data.csv file
+        self.current_flight_folder = output_folder
+            
+        results_file = os.path.join(output_folder, "tracked_data.csv")
+        photos_folder = os.path.join(output_folder, "photos")
+        #Check if the results file exists
+        if not os.path.exists(results_file):
+            print(f"Results file not found: {results_file}")
             return
 
-        conn = sqlite3.connect(db_path)
+        #Load results from the file
+        results = pd.read_csv(results_file)
+        if "Flight Duration" in results.columns:
+            duration = results["Flight Duration"].iloc[0]
+            self.flight_duration_label.setText(f"Διάρκεια Πτήσης: {duration}")
+        #Retain only the row with the highest confidence for each ID
+        filtered_results = results.loc[results.groupby("ID")["Confidence"].idxmax()]
 
-        # Query all flight results
-        query = "SELECT * FROM flight_results"
-        results = pd.read_sql_query(query, conn)
+        #Count diseases, ensuring "Healthy" is included
+        disease_counts = filtered_results["Class"].value_counts()
 
-        # Keep only the entry with the highest confidence for each ID
-        results = results.loc[results.groupby("ID")["Confidence"].idxmax()]
-
-        # Count unique diseases, including Healthy as its own category
-        disease_counts = results["Class"].value_counts()
-
-        # Ensure "Healthy" is always present in the counts
+        #Add "Healthy" to the disease counts if missing
         if "Healthy" not in disease_counts:
             disease_counts["Healthy"] = 0
 
-        # Calculate total plants and affected plants
-        total_plants = results["ID"].nunique()
-        affected_plants = total_plants - disease_counts["Healthy"]
+        #Aggregate statistics
+        total_plants = results["ID"].nunique()  #Count of unique plants analyzed
+        healthy_plants = filtered_results[filtered_results["Class"] == "Healthy"]["ID"].nunique()  #Unique healthy plants
+        affected_plants = total_plants - healthy_plants  #Affected plants are those not healthy
 
-        # Get unique disease classes excluding Healthy
-        unique_diseases = len(disease_counts) - 1 if "Healthy" in disease_counts else len(disease_counts)
+        #Remove "Healthy" from the disease count for unique diseases detected
+        unique_diseases = len(disease_counts) - (1 if "Healthy" in disease_counts else 0)
 
-        # Update the statistics in the GUI
+        #Update the report with aggregated data
         self.update_flight_data(
-            flight_time=flight_folder.split("_"),  # Extract the timestamp from the folder name
+            flight_time=output_folder.split("_"),  # Extract timestamp from folder name
             diseases=unique_diseases,
             plants_analyzed=total_plants,
             affected_plants=affected_plants,
         )
 
-        # Draw the chart
+        #Update the bar chart with unique counts
         self.draw_chart(categories=disease_counts.index.tolist(), values=disease_counts.values.tolist())
 
-        # Load photos of non-healthy plants
-        self.load_photos(photos_folder, db_path)
-
-        # Get and display flight duration
-        if "FlightDuration" in results.columns:
-            duration = results["FlightDuration"].iloc[0]
-            self.flight_duration_label.setText(f"Διάρκεια Πτήσης: {duration}")
-
-        conn.close()
+        #Load photos of detected objects
+        self.load_photos(photos_folder, results_file)
 
 
 
-
-
-
-
-    def load_photos(self, photos_folder, db_path):
-        """Load photos of non-healthy plants from the database."""
+    def load_photos(self, photos_folder, results_file):
+        """Load photos of non-healthy plants from the photos folder."""
         if not os.path.exists(photos_folder):
             print(f"Photos folder not found: {photos_folder}")
-            self.placeholder_image.setText("No photos available")
+            self.image_label.setText("No photos available")
             return
 
-        if not os.path.exists(db_path):
-            print(f"Database not found: {db_path}")
-            self.placeholder_image.setText("No results available")
+        if not os.path.exists(results_file):
+            print(f"Results file not found: {results_file}")
+            self.image_label.setText("No results available")
             return
 
-        conn = sqlite3.connect(db_path)
-        query = "SELECT DISTINCT ID FROM flight_results WHERE Class != 'Healthy'"
-        non_healthy_ids = pd.read_sql_query(query, conn)["ID"].tolist()
-        conn.close()
+        # Load results and filter out healthy plants
+        results = pd.read_csv(results_file)
+        non_healthy_ids = results[results["Class"] != "Healthy"]["ID"].unique()
 
-        # Filter photos by non-healthy IDs
+        # Get the list of photo files for non-healthy plants
         photo_files = [
             f for f in os.listdir(photos_folder)
             if f.endswith(".jpg") and int(f.split("_ID")[-1].replace(".jpg", "")) in non_healthy_ids
         ]
 
         if not photo_files:
-            self.placeholder_image.setText("No photos of non-healthy plants available")
+            self.image_label.setText("No photos of non-healthy plants available")
             return
 
+        # Initialize carousel
         self.photo_files = photo_files
         self.photo_index = 0
         self.photos_folder = photos_folder
+
+        # Display the first photo
         self.update_carousel_image()
-
-
-
 
     def update_carousel_image(self):
         """Update the displayed image in the carousel."""
@@ -480,21 +447,14 @@ class DroneReportApp(QMainWindow):
 
     def open_video_in_external_player(self):
         """Open the flight video in an external media player."""
-        if not self.current_flight_folder:
+        if self.current_flight_folder is None:
             print("No flight data loaded.")
             return
 
-        video_formats = [".mp4", ".mov", ".avi"]
-        for ext in video_formats:
-            potential_path = os.path.join(self.current_flight_folder, f"processed_video{ext}")
-            if os.path.exists(potential_path):
-                video_path = potential_path
-                break
-
-        if not video_path:
+        video_path = os.path.join(self.current_flight_folder, "processed_video.mp4")
+        if not os.path.exists(video_path):
             print("Flight video not found.")
             return
-
 
         try:
             # Windows
@@ -510,8 +470,6 @@ class DroneReportApp(QMainWindow):
                 print("Unsupported operating system.")
         except Exception as e:
             print(f"Error opening video: {e}")
-
-
 
 
 
