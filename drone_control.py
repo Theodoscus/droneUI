@@ -10,6 +10,9 @@ from PyQt6.QtGui import QPixmap, QImage
 from djitellopy import Tello
 from report_gen import DroneReportApp
 from video_process import run
+
+
+
 FLIGHTS_FOLDER = "flights"
 if not os.path.exists(FLIGHTS_FOLDER):
     os.makedirs(FLIGHTS_FOLDER)
@@ -64,9 +67,11 @@ class DroneControlApp(QMainWindow):
         # Video Capture Variables
         self.video_stream_active = False
         self.video_capture = None
-
+        
         # UI Layout
         self.init_ui()
+        self.update_history_button()
+        
 
     def init_ui(self):
         main_widget = QWidget()
@@ -95,8 +100,11 @@ class DroneControlApp(QMainWindow):
         self.history_button = QPushButton("Προβολή Ιστορικού Πτήσεων")
         self.history_button.setStyleSheet("padding: 10px; font-size: 14px;")
         self.history_button.clicked.connect(self.view_flight_history)
+        
         control_layout.addWidget(self.history_button)
-
+        
+        
+        
         main_layout.addLayout(control_layout)
 
         # Keyboard Instructions
@@ -191,6 +199,8 @@ class DroneControlApp(QMainWindow):
         self.video_label.setPixmap(QPixmap.fromImage(placeholder_image))
 
     
+
+    
     def takeoff(self):
         if self.is_flying:
             QMessageBox.warning(self, "Drone Status", "Το drone είναι ήδη στον αέρα!")
@@ -228,7 +238,7 @@ class DroneControlApp(QMainWindow):
         """Process the flight video using video_process.py."""
         # Supported video formats
         video_formats = [".mp4", ".mov", ".avi"]
-
+        
         # Search for a video file in the flight folder
         video_path = None
         for fmt in video_formats:
@@ -241,14 +251,22 @@ class DroneControlApp(QMainWindow):
             # Process the video using video_process.py
             try:
                 run(video_path, duration)
+                self.update_history_button()
             except Exception as e:
                 QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
         else:
             # Show warning if no video is found
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
+        
 
 
-
+    def update_history_button(self):
+        """Enable the history button if runs folder has content."""
+        runs_dir = "runs"
+        if os.path.exists(runs_dir) and os.listdir(runs_dir):
+            self.history_button.setEnabled(True)
+        else:
+            self.history_button.setEnabled(False)
 
     
     

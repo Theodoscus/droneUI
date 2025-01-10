@@ -5,6 +5,9 @@ import cv2
 import os
 from datetime import datetime
 from report_gen import DroneReportApp
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QApplication
+from PyQt6.QtCore import Qt
+
 
 BASE_OUTPUT_FOLDER = "runs"
 
@@ -143,8 +146,13 @@ def process_video(video_path, model, output_folder, duration):
     saved_ids = set()
     tracking_data = []
 
+    # Create the loading dialog
+    app = QApplication.instance() or QApplication([])  # Ensure QApplication exists
+    loading_dialog = LoadingDialog(total_frames)
+    loading_dialog.show()
+
     print("Processing video...")
-    for _ in tqdm(range(total_frames), desc="Processing Frames"):
+    for frame_index in range(total_frames):
         ret, frame = cap.read()
         if not ret:
             break
@@ -153,7 +161,7 @@ def process_video(video_path, model, output_folder, duration):
         results = track_and_detect(model, frame)
 
         # Process the frame and annotate it
-        annotated_frame = process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_folder)
+        annotated_frame = process_frame(results, frame, frame_index, tracking_data, saved_ids, photo_folder)
 
         # Write the annotated frame to the processed video
         video_writer.write(annotated_frame)
@@ -163,7 +171,14 @@ def process_video(video_path, model, output_folder, duration):
             save_tracking_data_to_db(cursor, tracking_data, duration)
             tracking_data.clear()
 
+        # Update the loading dialog
+        loading_dialog.update_progress(frame_index)
+        app.processEvents()  # Allow the GUI to refresh
+
         frame_count += 1
+
+    # Close the loading dialog
+    loading_dialog.close()
 
     # Commit remaining tracking data and close database connection
     conn.commit()
@@ -194,3 +209,25 @@ def run(video_path, duration):
     model = initialize_model(model_path)
     output_folder = create_output_folder(BASE_OUTPUT_FOLDER)
     process_video(video_path, model, output_folder, duration)
+    
+
+class LoadingDialog(QDialog):
+    """A simple dialog with a progress bar for video processing."""
+    def __init__(self, total_frames, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Processing Video")
+        self.setGeometry(400, 200, 400, 150)
+
+        # Layout and widgets
+        layout = QVBoxLayout(self)
+        self.label = QLabel("Processing video, please wait...")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.label)
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, total_frames)
+        layout.addWidget(self.progress_bar)
+
+    def update_progress(self, frame_index):
+        """Update the progress bar."""
+        self.progress_bar.setValue(frame_index)

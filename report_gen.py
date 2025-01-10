@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
+    QApplication, QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
 )
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -14,6 +14,11 @@ from PyQt6.QtGui import QPixmap, QPainter
 import subprocess
 import platform
 import sqlite3
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet
 
 
 class DroneReportApp(QMainWindow):
@@ -235,41 +240,82 @@ class DroneReportApp(QMainWindow):
 
 
     def export_to_pdf(self):
-        """Export the flight report to a PDF."""
+        """Export flight report to a visually appealing PDF."""
         if not self.current_flight_folder:
-            print("No flight data loaded.")
+            QMessageBox.warning(self, "Error", "No flight data loaded.")
             return
 
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
-        if not os.path.exists(db_path):
-            print("Database file not found.")
-            return
+        photos_folder = os.path.join(self.current_flight_folder, "photos")
+        pdf_path = os.path.join(self.current_flight_folder, "flight_report.pdf")
 
+        # Load data from the database
         conn = sqlite3.connect(db_path)
-        query = "SELECT * FROM flight_results"
+        query = "SELECT ID, Class, Confidence FROM flight_results WHERE Class != 'Healthy'"
         results = pd.read_sql_query(query, conn)
         conn.close()
 
-        # Generate the PDF report
-        pdf_file = os.path.join(self.current_flight_folder, "flight_report.pdf")
-        c = canvas.Canvas(pdf_file)
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, 800, "Αναφορά Πτήσης")
-        c.setFont("Helvetica", 12)
-        c.drawString(50, 780, f"Ημερομηνία: {self.flight_time_label.text()}")
-        c.drawString(50, 750, f"{self.disease_count_label.text()}")
-        c.drawString(50, 730, f"{self.plants_analyzed_label.text()}")
-        c.drawString(50, 710, f"{self.affected_plants_label.text()}")
+        # Prepare the document
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
 
-        # Add disease counts to the PDF
-        disease_counts = results["Class"].value_counts()
-        y_position = 690
-        for disease, count in disease_counts.items():
-            c.drawString(50, y_position, f"{disease}: {count}")
-            y_position -= 20
+        # Title and Metadata
+        elements.append(Paragraph("Flight Report", styles['Title']))
+        elements.append(Spacer(1, 0.2 * inch))
+        elements.append(Paragraph(f"Date and Time: {self.flight_time_label.text()}", styles['Normal']))
+        elements.append(Paragraph(f"Flight Duration: {self.flight_duration_label.text()}", styles['Normal']))
+        elements.append(Paragraph(f"Total Plants Analyzed: {self.plants_analyzed_label.text()}", styles['Normal']))
+        elements.append(Paragraph(f"Affected Plants: {self.affected_plants_label.text()}", styles['Normal']))
+        elements.append(Spacer(1, 0.3 * inch))
 
-        c.save()
-        print(f"PDF saved to {pdf_file}")
+        # Add a bar chart
+        chart_path = os.path.join(self.current_flight_folder, "chart.png")
+        self.generate_chart(chart_path, results)  # Generate the chart
+        elements.append(Image(chart_path, width=5 * inch, height=3 * inch))
+        elements.append(Spacer(1, 0.3 * inch))
+
+        # Add a table of affected plants
+        elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
+        table_data = [["ID", "Class", "Confidence"]]
+        table_data += results.values.tolist()
+        table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 0.3 * inch))
+
+        # Add photos of affected plants
+        elements.append(Paragraph("Photos of Affected Plants:", styles['Heading2']))
+        photo_files = [os.path.join(photos_folder, f) for f in os.listdir(photos_folder) if f.endswith(".jpg")]
+        for photo_file in photo_files[:5]:  # Limit to 5 photos for the report
+            elements.append(Image(photo_file, width=3 * inch, height=2 * inch))
+            elements.append(Spacer(1, 0.2 * inch))
+
+        # Build the document
+        doc.build(elements)
+        QMessageBox.information(self, "PDF Exported", f"PDF saved to {pdf_path}")
+
+    def generate_chart(self, chart_path, results):
+        """Generate a bar chart for the PDF."""
+        class_counts = results["Class"].value_counts()
+        plt.figure(figsize=(8, 4))
+        class_counts.plot(kind="bar", color="gray")
+        plt.title("Affected Plants by Class")
+        plt.xlabel("Class")
+        plt.ylabel("Count")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(chart_path)
+        plt.close()
+
 
     
     
@@ -336,7 +382,7 @@ class DroneReportApp(QMainWindow):
 
 
     def load_photos(self, photos_folder, db_path):
-        """Load photos of non-healthy plants from the database."""
+        """Load photos of plants where the highest confidence class is affected (non-healthy)."""
         if not os.path.exists(photos_folder):
             print(f"Photos folder not found: {photos_folder}")
             self.placeholder_image.setText("No photos available")
@@ -348,24 +394,37 @@ class DroneReportApp(QMainWindow):
             return
 
         conn = sqlite3.connect(db_path)
-        query = "SELECT DISTINCT ID FROM flight_results WHERE Class != 'Healthy'"
-        non_healthy_ids = pd.read_sql_query(query, conn)["ID"].tolist()
+
+        # Query to get the highest confidence class for each ID
+        query = """
+            SELECT ID, 
+                MAX(CASE WHEN Class = 'Healthy' THEN Confidence ELSE 0 END) AS HealthyConfidence,
+                MAX(CASE WHEN Class != 'Healthy' THEN Confidence ELSE 0 END) AS NonHealthyConfidence
+            FROM flight_results
+            GROUP BY ID
+        """
+        results = pd.read_sql_query(query, conn)
         conn.close()
 
-        # Filter photos by non-healthy IDs
+        # Filter IDs where the highest confidence is for a non-healthy class
+        affected_ids = results[results["NonHealthyConfidence"] > results["HealthyConfidence"]]["ID"].tolist()
+
+        # Filter photos by affected IDs
         photo_files = [
             f for f in os.listdir(photos_folder)
-            if f.endswith(".jpg") and int(f.split("_ID")[-1].replace(".jpg", "")) in non_healthy_ids
+            if f.endswith(".jpg") and int(f.split("_ID")[-1].replace(".jpg", "")) in affected_ids
         ]
+        
 
         if not photo_files:
-            self.placeholder_image.setText("No photos of non-healthy plants available")
+            self.placeholder_image.setText("No photos of affected plants available")
             return
 
         self.photo_files = photo_files
         self.photo_index = 0
         self.photos_folder = photos_folder
         self.update_carousel_image()
+
 
 
 
