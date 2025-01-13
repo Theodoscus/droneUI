@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QApplication, QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
+    QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
 )
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -27,22 +27,22 @@ class DroneReportApp(QMainWindow):
         self.setWindowTitle("Drone Flight Report")
         self.setGeometry(100, 100, 1200, 800)
 
-        #Main Widget
+        # Main Widget
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
         
-        #Load UI components
+        # Load UI components
         self.setup_ui(main_layout)
 
-        #Set layout to the main widget
+        # Set layout to the main widget
         main_widget.setLayout(main_layout)
 
-        #Load the newest flight data
+        # Load the newest flight data
         self.load_newest_flight_data()
 
     def setup_ui(self, main_layout):
-        #Header Section
+        # Header Section
         header_layout = QHBoxLayout()
         self.flight_time_label = QLabel("ΠΤΗΣΗ: ")
         self.flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
@@ -61,7 +61,7 @@ class DroneReportApp(QMainWindow):
 
         main_layout.addLayout(header_layout)
         
-        #Top Statistics Section
+        # Top Statistics Section
         stats_frame = QFrame()
         stats_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f5f5f5;")
         stats_layout = QGridLayout(stats_frame)
@@ -80,7 +80,7 @@ class DroneReportApp(QMainWindow):
 
         main_layout.addWidget(stats_frame)
 
-        #Bar Chart Section
+        # Bar Chart Section
         self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.figure)
 
@@ -91,7 +91,7 @@ class DroneReportApp(QMainWindow):
         chart_layout.addWidget(self.canvas)
         main_layout.addWidget(chart_frame)
 
-        #Image Section
+        # Image Section
         
         image_frame = QFrame()
         image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
@@ -114,7 +114,7 @@ class DroneReportApp(QMainWindow):
         image_layout.addWidget(fullscreen_button)
         main_layout.addWidget(image_frame)
           
-        #Navigation Buttons
+        # Navigation Buttons
         nav_buttons_layout = QHBoxLayout()
 
         prev_button = QPushButton("Προηγούμενο")
@@ -140,7 +140,7 @@ class DroneReportApp(QMainWindow):
         main_layout.addWidget(external_player_button)
 
         
-        #Footer Section
+        # Footer Section
         footer_layout = QHBoxLayout()
 
         export_pdf_button = QPushButton("Εξαγωγή αναφοράς σε PDF")
@@ -275,22 +275,22 @@ class DroneReportApp(QMainWindow):
         elements.append(Image(chart_path, width=5 * inch, height=3 * inch))
         elements.append(Spacer(1, 0.3 * inch))
 
-        # # Add a table of affected plants
-        # elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
-        # table_data = [["ID", "Class", "Confidence"]]
-        # table_data += results.values.tolist()
-        # table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
-        # table.setStyle(TableStyle([
-        #     ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        #     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        #     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        #     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        #     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        #     ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        #     ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        # ]))
-        # elements.append(table)
-        # elements.append(Spacer(1, 0.3 * inch))
+        # Add a table of affected plants
+        elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
+        table_data = [["ID", "Class", "Confidence"]]
+        table_data += results.values.tolist()
+        table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 0.3 * inch))
 
         # Add photos of affected plants
         elements.append(Paragraph("Photos of Affected Plants:", styles['Heading2']))
@@ -623,19 +623,7 @@ class ZoomableImageDialog(QDialog):
         self.graphics_view.scale(scale_factor, scale_factor)  # Apply new scale
 
         
-# if __name__ == "__main__":
-#     import sys
-#     from PyQt6.QtWidgets import QApplication
 
-#     # Create the application
-#     app = QApplication(sys.argv)
-
-#     # Instantiate and show the DroneReportApp
-#     report_app = DroneReportApp()
-#     report_app.show()
-
-#     # Execute the application
-#     sys.exit(app.exec())
 
 
     
