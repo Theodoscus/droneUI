@@ -55,7 +55,8 @@ class DroneControlApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Drone Control")
         self.setGeometry(100, 100, 1200, 800)
-
+        self.control_buttons = {}
+        
         # Initialize Mock Tello
         self.drone = MockTello()
         self.drone.connect()
@@ -75,18 +76,16 @@ class DroneControlApp(QMainWindow):
         self.ui_timer.timeout.connect(self.update_ui_stats)
         self.ui_timer.start(2000)
 
+        # Initialize Xbox Controller
         pygame.init()
         pygame.joystick.init()
         self.controller = None
-        if pygame.joystick.get_count() > 0:
-            self.controller = pygame.joystick.Joystick(0)
-            self.controller.init()
-            print("Xbox Controller connected!")
+        self.update_controller_status()
 
         # Timer to poll controller input
         self.controller_timer = QTimer()
         self.controller_timer.timeout.connect(self.poll_controller_input)
-        self.controller_timer.start(50)  # Check for inputs every 50ms
+        self.controller_timer.start(50)  # Check every 50ms
         
         # Key mapping
         self.key_pressed_mapping = {
@@ -119,15 +118,21 @@ class DroneControlApp(QMainWindow):
         self.connection_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.connection_status.setFixedHeight(50)  # Fix the height to keep it static
         main_layout.addWidget(self.connection_status)
-
+        
 
         # Content layout
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout)
+        
+        # Add Notification Label
+        self.notification_label = QLabel("")
+        self.notification_label.setStyleSheet("color: red; font-size: 16px; font-weight: bold;")
+        self.notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.notification_label.setVisible(False)  # Hidden by default
+        main_layout.addWidget(self.notification_label)
+
 
         # Left Panel
-        left_panel = QVBoxLayout()
-
         left_panel = QVBoxLayout()
 
         # Battery Group Box
@@ -146,9 +151,21 @@ class DroneControlApp(QMainWindow):
 
         # Set fixed size for the group box to make it compact
         battery_box.setFixedHeight(60)  # Height: 60px
-       #battery_box.setMaximumWidth(400)
+        #battery_box.setMaximumWidth(400)
 
         left_panel.addWidget(battery_box)
+
+        # Controller Status Box
+        controller_status_box = QGroupBox("Controller Status")
+        controller_layout = QVBoxLayout()
+
+        self.controller_status_label = QLabel("No Controller Connected")
+        self.controller_status_label.setStyleSheet("color: red; font-size: 14px; font-weight: bold;")
+        controller_layout.addWidget(self.controller_status_label)
+
+        controller_status_box.setLayout(controller_layout)
+        controller_status_box.setFixedSize(200, 60)  # Compact size for the box
+        left_panel.addWidget(controller_status_box)
 
 
         # Info Group Box
@@ -230,14 +247,45 @@ class DroneControlApp(QMainWindow):
         self.update_history_button()
 
 
+    def update_controller_status(self):
+        if pygame.joystick.get_count() > 0:
+            if not self.controller:
+                self.controller = pygame.joystick.Joystick(0)
+                self.controller.init()
+            self.controller_status_label.setText("Controller Connected")
+            self.controller_status_label.setStyleSheet("color: green; font-size: 14px; font-weight: bold;")
+            self.set_controls_enabled(False)  # Disable buttons and keyboard control
+        else:
+            self.controller = None
+            self.controller_status_label.setText("No Controller Connected")
+            self.controller_status_label.setStyleSheet("color: red; font-size: 14px; font-weight: bold;")
+            self.set_controls_enabled(True)  # Enable buttons and keyboard control
+
+    def set_controls_enabled(self, enabled):
+        # Disable or enable all control buttons
+        for button in self.control_buttons.values():
+            button.setEnabled(enabled)
+
+        # Toggle keyboard control
+        self.keyboard_control_enabled = enabled
+
+
+    
     def poll_controller_input(self):
+        pygame.event.pump()  # Process controller events
+        controller_count = pygame.joystick.get_count()
+
+        # Update status if connection changes
+        if (self.controller and controller_count == 0) or (not self.controller and controller_count > 0):
+            self.update_controller_status()
+
         if self.controller:
-            pygame.event.pump()  # Process controller events
             for event in pygame.event.get():
                 if event.type == pygame.JOYBUTTONDOWN:
                     self.handle_button_press(event.button)
                 elif event.type == pygame.JOYAXISMOTION:
                     self.handle_axis_motion(event.axis, event.value)
+
     
     def handle_button_press(self, button):
         """Map controller buttons to drone actions."""
@@ -277,37 +325,75 @@ class DroneControlApp(QMainWindow):
     
     def create_control_button(self, key, action, color=None):
         button = QPushButton(f"{key}\n({action})")
-        
         if color:
             button.setStyleSheet(f"background-color: {color}; color: white; font-weight: bold;")
-            
         button.clicked.connect(self.create_button_handler(action))
+        self.control_buttons[action] = button  # Store button in the dictionary
         return button
+
     
     def create_button_handler(self, action):
         def handler():
-            method = getattr(self, action.replace(" ", "_").lower(), None)
-            if callable(method):
-                method()
+            # Adjust method name mapping for consistency
+            action_mapping = {
+                "Flip Left": "flip_left",
+                "Forward": "move_forward",
+                "Flip Right": "flip_right",
+                "Flip Forward": "flip_forward",
+                "Left": "move_left",
+                "Backward": "move_backward",
+                "Right": "move_right",
+                "Flip Back": "flip_back",
+                "Take Off": "take_off",
+                "Land": "land",
+                "Up": "move_up",
+                "Down": "move_down",
+                "Rotate Left": "rotate_left",
+                "Rotate Right": "rotate_right",
+            }
+            method_name = action_mapping.get(action)
+            if method_name:
+                method = getattr(self, method_name, None)
+                if callable(method):
+                    method()
+                else:
+                    print(f"Warning: Method '{method_name}' not found for action '{action}'")
+            else:
+                print(f"Warning: Action '{action}' not mapped to any method")
 
         return handler
 
+
     def keyPressEvent(self, event: QKeyEvent):
+        if not self.keyboard_control_enabled:
+            return  # Ignore keyboard input if disabled
         if event.key() in self.key_pressed_mapping:
             self.key_pressed_mapping[event.key()]()
+
 
     def update_flight_duration(self):
         self.flight_duration += 1
         self.info_labels["Flight Duration"].setText(f"{self.flight_duration} sec")
 
     def update_ui_stats(self):
-        self.battery_level = max(0, self.battery_level - random.randint(0, 2))
+        self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
         self.height = random.randint(0, 500) if self.is_flying else 0
         self.speed = random.uniform(0, 10) if self.is_flying else 0
 
+        # Update battery progress bar
         self.battery_bar.setValue(self.battery_level)
+
+        # Check for low battery and display notification
+        if self.battery_level < 20:
+            self.notification_label.setText("Warning: Battery level is critically low!")
+            self.notification_label.setVisible(True)
+        else:
+            self.notification_label.setVisible(False)
+
+        # Update other stats
         self.info_labels["Height"].setText(f"{self.height} cm")
         self.info_labels["Speed"].setText(f"{self.speed:.2f} cm/s")
+
 
     def take_off(self):
         self.history_button.setEnabled(False)
