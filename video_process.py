@@ -1,5 +1,4 @@
 import sqlite3
-from tqdm import tqdm
 from ultralytics import YOLO
 import cv2
 import os
@@ -12,7 +11,7 @@ from PyQt6.QtCore import Qt
 BASE_OUTPUT_FOLDER = "runs"
 
 def initialize_model(model_path):
-    """Load the YOLO model."""
+    # Load the YOLO model
     print("Loading YOLO model...")
     model = YOLO(model_path)
     print("Model loaded successfully.")
@@ -20,13 +19,14 @@ def initialize_model(model_path):
 
 
 def track_and_detect(model, frame):
-    """Run YOLO tracking on a single frame."""
+    # Run YOLO tracking on a single frame each time
+    # We can also adjust the parameters for more accurate and faster results
     results = model.track(source=frame, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True)
     return results
 
 
 def create_output_folder(base_folder):
-    """Create a unique output folder for each run."""
+    # Create a unique output folder for each run.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_folder = os.path.join(base_folder, f"run_{timestamp}")
     os.makedirs(run_folder, exist_ok=True)
@@ -34,7 +34,7 @@ def create_output_folder(base_folder):
 
 
 def initialize_database(db_path):
-    """Create an SQLite database and flight results table."""
+    # Create an SQLite database and flight results table.
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -54,7 +54,7 @@ def initialize_database(db_path):
 
 
 def save_tracking_data_to_db(cursor, tracking_data, duration):
-    """Save tracking data directly to the SQLite database."""
+    # Save tracking data directly to the SQLite database.
     for data in tracking_data:
         frame, track_id, class_name, bbox, conf = data
 
@@ -76,7 +76,6 @@ def save_tracking_data_to_db(cursor, tracking_data, duration):
 
 
 def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_folder):
-    """Process YOLO results for a single frame."""
     # Process detections in the frame
     for result in results[0].boxes:
         # Skip untracked objects
@@ -118,7 +117,7 @@ def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_f
 
 
 def process_video(video_path, model, output_folder, duration):
-    """Process the entire video for plant tracking and disease detection."""
+    # Process the entire video for plant tracking and disease detection.
     cap = cv2.VideoCapture(video_path)
     frame_count = 0
 
@@ -196,7 +195,7 @@ def process_video(video_path, model, output_folder, duration):
 
 
 def save_object_photo(frame, bbox, track_id, class_name, photo_folder):
-    """Save the first photo of an object by ID."""
+    # Save only the first photo of an object by unique ID
     x_min, y_min, x_max, y_max = map(int, bbox)
     cropped_object = frame[y_min:y_max, x_min:x_max]
     photo_path = os.path.join(photo_folder, f"{class_name}_ID{track_id}.jpg")
@@ -204,7 +203,7 @@ def save_object_photo(frame, bbox, track_id, class_name, photo_folder):
 
 
 def run(video_path, duration):
-    """Run the video processing pipeline."""
+    # Run the video processing pipeline
     model_path = "yolol100.pt"
     model = initialize_model(model_path)
     output_folder = create_output_folder(BASE_OUTPUT_FOLDER)
@@ -212,7 +211,7 @@ def run(video_path, duration):
     
 
 class LoadingDialog(QDialog):
-    """A simple dialog with a progress bar for video processing."""
+    # A simple dialog with a progress bar for video processing
     def __init__(self, total_frames, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Processing Video")
@@ -229,5 +228,5 @@ class LoadingDialog(QDialog):
         layout.addWidget(self.progress_bar)
 
     def update_progress(self, frame_index):
-        """Update the progress bar."""
+        # Update the progress bar.
         self.progress_bar.setValue(frame_index)

@@ -4,7 +4,7 @@ import datetime
 import random
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QGridLayout, QMessageBox, QGroupBox
+    QPushButton, QProgressBar, QMessageBox, QGroupBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeyEvent
