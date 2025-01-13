@@ -275,22 +275,22 @@ class DroneReportApp(QMainWindow):
         elements.append(Image(chart_path, width=5 * inch, height=3 * inch))
         elements.append(Spacer(1, 0.3 * inch))
 
-        # Add a table of affected plants
-        elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
-        table_data = [["ID", "Class", "Confidence"]]
-        table_data += results.values.tolist()
-        table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ]))
-        elements.append(table)
-        elements.append(Spacer(1, 0.3 * inch))
+        # # Add a table of affected plants
+        # elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
+        # table_data = [["ID", "Class", "Confidence"]]
+        # table_data += results.values.tolist()
+        # table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
+        # table.setStyle(TableStyle([
+        #     ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        #     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        #     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        #     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        #     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        #     ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        #     ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        # ]))
+        # elements.append(table)
+        # elements.append(Spacer(1, 0.3 * inch))
 
         # Add photos of affected plants
         elements.append(Paragraph("Photos of Affected Plants:", styles['Heading2']))

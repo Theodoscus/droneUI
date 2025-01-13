@@ -1,17 +1,17 @@
-import os
-import cv2
 import sys
+import os
 import datetime
+import random
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QMessageBox, QFileDialog
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QProgressBar, QGridLayout, QMessageBox, QGroupBox
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QImage
-from djitellopy import Tello
+from PyQt6.QtGui import QKeyEvent
 from report_gen import DroneReportApp
 from video_process import run
-
-
+import pygame
+from PyQt6.QtCore import QTimer
 
 FLIGHTS_FOLDER = "flights"
 if not os.path.exists(FLIGHTS_FOLDER):
@@ -53,187 +53,293 @@ class MockTello:
 class DroneControlApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drone Control Panel")
-        self.setGeometry(100, 100, 1000, 700)
+        self.setWindowTitle("Drone Control")
+        self.setGeometry(100, 100, 1200, 800)
 
-        # Initialize Tello Drone
+        # Initialize Mock Tello
         self.drone = MockTello()
         self.drone.connect()
         self.is_flying = False
-        self.recording = False
-        self.flight_start_time = None
-        self.flight_folder = None
+        self.flight_duration = 0
+        self.battery_level = 100
+        self.height = 0
+        self.speed = 0
+        self.current_flight_folder = None
+        self.flight_timer = QTimer()
+        self.flight_timer.timeout.connect(self.update_flight_duration)
 
-        # Video Capture Variables
-        self.video_stream_active = False
-        self.video_capture = None
-        
-        # UI Layout
         self.init_ui()
-        self.update_history_button()
+
+        # Timer to update UI stats
+        self.ui_timer = QTimer()
+        self.ui_timer.timeout.connect(self.update_ui_stats)
+        self.ui_timer.start(2000)
+
+        pygame.init()
+        pygame.joystick.init()
+        self.controller = None
+        if pygame.joystick.get_count() > 0:
+            self.controller = pygame.joystick.Joystick(0)
+            self.controller.init()
+            print("Xbox Controller connected!")
+
+        # Timer to poll controller input
+        self.controller_timer = QTimer()
+        self.controller_timer.timeout.connect(self.poll_controller_input)
+        self.controller_timer.start(50)  # Check for inputs every 50ms
         
+        # Key mapping
+        self.key_pressed_mapping = {
+            Qt.Key.Key_W: self.move_forward,
+            Qt.Key.Key_S: self.move_backward,
+            Qt.Key.Key_A: self.move_left,
+            Qt.Key.Key_D: self.move_right,
+            Qt.Key.Key_Q: self.flip_left,
+            Qt.Key.Key_E: self.flip_right,
+            Qt.Key.Key_Return: self.take_off,
+            Qt.Key.Key_Space: self.land,
+            Qt.Key.Key_Up: self.move_up,
+            Qt.Key.Key_Down: self.move_down,
+            Qt.Key.Key_Left: self.rotate_left,
+            Qt.Key.Key_Right: self.rotate_right,
+        }
 
     def init_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
-
-        # Live Video Feed
-        self.video_label = QLabel("No Video Feed")
-        self.video_label.setStyleSheet("border: 1px solid black; background-color: gray;")
-        self.video_label.setFixedSize(800, 400)
-        main_layout.addWidget(self.video_label, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Drone Control Buttons
-        control_layout = QHBoxLayout()
-
-        self.takeoff_button = QPushButton("Απογείωση")
-        self.takeoff_button.setStyleSheet("padding: 10px; font-size: 14px;")
-        self.takeoff_button.clicked.connect(self.takeoff)
-        control_layout.addWidget(self.takeoff_button)
-
-        self.land_button = QPushButton("Προσγείωση")
-        self.land_button.setStyleSheet("padding: 10px; font-size: 14px;")
-        self.land_button.clicked.connect(self.land)
-        control_layout.addWidget(self.land_button)
-
-        self.history_button = QPushButton("Προβολή Ιστορικού Πτήσεων")
-        self.history_button.setStyleSheet("padding: 10px; font-size: 14px;")
-        self.history_button.clicked.connect(self.view_flight_history)
-        
-        control_layout.addWidget(self.history_button)
-        
-        
-        
-        main_layout.addLayout(control_layout)
-
-        # Keyboard Instructions
-        instructions_label = QLabel("Χρησιμοποιήστε το πληκτρολόγιο:\n"
-                                    "W: Εμπρός, S: Πίσω, A: Αριστερά, D: Δεξιά\n"
-                                    "Q: Αριστερή Περιστροφή, E: Δεξιά Περιστροφή\n"
-                                    "Up/Down: Άνοδος/Κάθοδος")
-        instructions_label.setStyleSheet("padding: 10px; font-size: 12px;")
-        main_layout.addWidget(instructions_label, alignment=Qt.AlignmentFlag.AlignCenter)
-
         main_widget.setLayout(main_layout)
 
-        # Timer for Video Stream
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_video_feed)
+        # Connection status
+        # Connection status
+        self.connection_status = QLabel("CONNECTED")
+        self.connection_status.setStyleSheet(
+            "background-color: green; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
+        )
+        self.connection_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.connection_status.setFixedHeight(50)  # Fix the height to keep it static
+        main_layout.addWidget(self.connection_status)
+
+
+        # Content layout
+        content_layout = QHBoxLayout()
+        main_layout.addLayout(content_layout)
+
+        # Left Panel
+        left_panel = QVBoxLayout()
+
+        left_panel = QVBoxLayout()
+
+        # Battery Group Box
+        battery_box = QGroupBox("Battery")
+        battery_layout = QVBoxLayout()
+
+        self.battery_bar = QProgressBar()
+        self.battery_bar.setValue(self.battery_level)
+        self.battery_bar.setStyleSheet(
+            "QProgressBar::chunk { background-color: green; }"
+        )
+        self.battery_bar.setFixedHeight(20)  # Reduce the height of the progress bar
+
+        battery_layout.addWidget(self.battery_bar)
+        battery_box.setLayout(battery_layout)
+
+        # Set fixed size for the group box to make it compact
+        battery_box.setFixedHeight(60)  # Height: 60px
+       #battery_box.setMaximumWidth(400)
+
+        left_panel.addWidget(battery_box)
+
+
+        # Info Group Box
+        info_box = QGroupBox("Drone Info")
+        info_layout = QVBoxLayout()
+        self.info_labels = {
+            "Temperature": QLabel("20°C"),
+            "Height": QLabel("0 cm"),
+            "Speed": QLabel("0 cm/s"),
+            "Data Transmitted": QLabel("0 MB"),
+            "Flight Duration": QLabel("0 sec"),
+        }
+        for key, label in self.info_labels.items():
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{key}:"))
+            row.addWidget(label)
+            info_layout.addLayout(row)
+        info_box.setLayout(info_layout)
+        left_panel.addWidget(info_box)
+
+        content_layout.addLayout(left_panel)
+
+        # Center Panel (Live Stream) with updated size
+        self.stream_label = QLabel("Drone Stream Placeholder")
+        self.stream_label.setStyleSheet("background-color: #000; color: white; font-size: 14px; border: 1px solid #555;")
+        self.stream_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stream_label.setFixedSize(1280, 720)  # Set size for 720p video
+        content_layout.addWidget(self.stream_label)
+
+        # Bottom Controls - Compact Layout
+        controls_layout = QVBoxLayout()
+
+        # Row 1: Top Movement Controls
+        top_controls_layout = QHBoxLayout()
+        top_controls_layout.setSpacing(5)  # Reduce spacing between buttons
+        top_controls_layout.addWidget(self.create_control_button("Q", "Flip Left"))
+        top_controls_layout.addWidget(self.create_control_button("W", "Forward"))
+        top_controls_layout.addWidget(self.create_control_button("E", "Flip Right"))
+        top_controls_layout.addWidget(self.create_control_button("R", "Flip Forward"))
+        controls_layout.addLayout(top_controls_layout)
+
+        # Row 2: Middle Movement Controls
+        middle_controls_layout = QHBoxLayout()
+        middle_controls_layout.setSpacing(5)  # Reduce spacing between buttons
+        middle_controls_layout.addWidget(self.create_control_button("A", "Left"))
+        middle_controls_layout.addWidget(self.create_control_button("S", "Backward"))
+        middle_controls_layout.addWidget(self.create_control_button("D", "Right"))
+        middle_controls_layout.addWidget(self.create_control_button("F", "Flip Back"))
+        controls_layout.addLayout(middle_controls_layout)
+
+        # Row 3: Action Controls
+        action_controls_layout = QHBoxLayout()
+        action_controls_layout.setSpacing(5)  # Reduce spacing between buttons
+        action_controls_layout.addWidget(self.create_control_button("Enter", "Take Off", "green"))
+        action_controls_layout.addWidget(self.create_control_button("Space", "Land", "red"))
+        controls_layout.addLayout(action_controls_layout)
+
+        # Row 4: Directional Controls
+        directional_controls_layout = QHBoxLayout()
+        directional_controls_layout.setSpacing(5)  # Reduce spacing between buttons
+        directional_controls_layout.addWidget(self.create_control_button("Up Arrow", "Up"))
+        directional_controls_layout.addWidget(self.create_control_button("Down Arrow", "Down"))
+        directional_controls_layout.addWidget(self.create_control_button("Left Arrow", "Rotate Left"))
+        directional_controls_layout.addWidget(self.create_control_button("Right Arrow", "Rotate Right"))
+        controls_layout.addLayout(directional_controls_layout)
+
+        main_layout.addLayout(controls_layout)
+
+
+
+
+        # View Flight History Button
+        self.history_button = QPushButton("View Flight History")
         
-    def view_flight_history(self):
-        """Open the report window to view flight history."""
-        # Open the flight history report
-        report_window = DroneReportApp()
-        report_window.show()
-
+        self.history_button.setStyleSheet("font-size: 14px; padding: 10px;")
+        self.history_button.clicked.connect(self.view_flight_history)
         
-    def keyPressEvent(self, event):
-            if not self.is_flying:
-                QMessageBox.warning(self, "Drone Status", "Το drone δεν είναι στον αέρα! Παρακαλώ απογειώστε το drone πρώτα.")
-                return
+        main_layout.addWidget(self.history_button)
+        self.update_history_button()
 
-            key = event.key()
 
-            if key == Qt.Key.Key_W:
-                print("Mock: Drone moving forward")
-            elif key == Qt.Key.Key_S:
-                print("Mock: Drone moving backward")
-            elif key == Qt.Key.Key_A:
-                print("Mock: Drone moving left")
-            elif key == Qt.Key.Key_D:
-                print("Mock: Drone moving right")
-            elif key == Qt.Key.Key_Q:
-                print("Mock: Drone rotating left")
-            elif key == Qt.Key.Key_E:
-                print("Mock: Drone rotating right")
-            elif key == Qt.Key.Key_Up:
-                print("Mock: Drone moving up")
-            elif key == Qt.Key.Key_Down:
-                print("Mock: Drone moving down")
-            else:
-                print("Key not mapped")
-
-    # def start_video_stream(self):
-    #     if not self.video_stream_active:
-    #         self.drone.streamon()
-    #         self.video_stream_active = True
-    #         self.video_capture = cv2.VideoCapture('udp://0.0.0.0:11111')
-    #         self.timer.start(30)
-
-    # def stop_video_stream(self):
-    #     if self.video_stream_active:
-    #         self.timer.stop()
-    #         self.video_stream_active = False
-    #         self.drone.streamoff()
-    #         if self.video_capture:
-    #             self.video_capture.release()
+    def poll_controller_input(self):
+        if self.controller:
+            pygame.event.pump()  # Process controller events
+            for event in pygame.event.get():
+                if event.type == pygame.JOYBUTTONDOWN:
+                    self.handle_button_press(event.button)
+                elif event.type == pygame.JOYAXISMOTION:
+                    self.handle_axis_motion(event.axis, event.value)
     
-    # def update_video_feed(self):
-    #     if self.video_capture:
-    #         ret, frame = self.video_capture.read()
-    #         if ret:
-    #             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    #             height, width, channel = rgb_image.shape
-    #             bytes_per_line = channel * width
-    #             q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-    #             self.video_label.setPixmap(QPixmap.fromImage(q_image))
+    def handle_button_press(self, button):
+        """Map controller buttons to drone actions."""
+        if button == 0:  # Example: Button A
+            self.take_off()
+        elif button == 1:  # Example: Button B
+            self.land()
+        elif button == 2:  # Example: Button X
+            self.flip_left()
+        elif button == 3:  # Example: Button Y
+            self.flip_right()
 
-    #             if self.recording:
-    #                 self.video_writer.write(frame)
+    def handle_axis_motion(self, axis, value):
+        """Map joystick axes to drone movement."""
+        if axis == 0:  # Left joystick horizontal
+            if value < -0.5:
+                self.move_left()
+            elif value > 0.5:
+                self.move_right()
+        elif axis == 1:  # Left joystick vertical
+            if value < -0.5:
+                self.move_forward()
+            elif value > 0.5:
+                self.move_backward()
+        elif axis == 2:  # Right joystick horizontal
+            if value < -0.5:
+                self.rotate_left()
+            elif value > 0.5:
+                self.rotate_right()
+        elif axis == 3:  # Right joystick vertical
+            if value < -0.5:
+                self.move_up()
+            elif value > 0.5:
+                self.move_down()
 
-    def start_video_stream(self):
-        if not self.video_stream_active:
-            self.video_stream_active = True
-            self.timer.start(30)
-
-    def stop_video_stream(self):
-        if self.video_stream_active:
-            self.timer.stop()
-            self.video_stream_active = False
-
-    def update_video_feed(self):
-        # Simulate video feed with a placeholder image
-        placeholder_image = QImage(800, 400, QImage.Format.Format_RGB888)
-        placeholder_image.fill(Qt.GlobalColor.lightGray)
-        self.video_label.setPixmap(QPixmap.fromImage(placeholder_image))
 
     
-
+    def create_control_button(self, key, action, color=None):
+        button = QPushButton(f"{key}\n({action})")
+        
+        if color:
+            button.setStyleSheet(f"background-color: {color}; color: white; font-weight: bold;")
+            
+        button.clicked.connect(self.create_button_handler(action))
+        return button
     
-    def takeoff(self):
-        if self.is_flying:
-            QMessageBox.warning(self, "Drone Status", "Το drone είναι ήδη στον αέρα!")
-            return
+    def create_button_handler(self, action):
+        def handler():
+            method = getattr(self, action.replace(" ", "_").lower(), None)
+            if callable(method):
+                method()
 
-        self.drone.takeoff()
-        self.is_flying = True
-        self.flight_start_time = datetime.datetime.now()
+        return handler
 
-        # Create a folder for the flight
-        self.flight_folder = os.path.join(FLIGHTS_FOLDER, f"Flight_{self.flight_start_time.strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(self.flight_folder, exist_ok=True)
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in self.key_pressed_mapping:
+            self.key_pressed_mapping[event.key()]()
 
-        self.start_video_stream()
+    def update_flight_duration(self):
+        self.flight_duration += 1
+        self.info_labels["Flight Duration"].setText(f"{self.flight_duration} sec")
+
+    def update_ui_stats(self):
+        self.battery_level = max(0, self.battery_level - random.randint(0, 2))
+        self.height = random.randint(0, 500) if self.is_flying else 0
+        self.speed = random.uniform(0, 10) if self.is_flying else 0
+
+        self.battery_bar.setValue(self.battery_level)
+        self.info_labels["Height"].setText(f"{self.height} cm")
+        self.info_labels["Speed"].setText(f"{self.speed:.2f} cm/s")
+
+    def take_off(self):
+        self.history_button.setEnabled(False)
+        if not self.is_flying:
+            self.is_flying = True
+            self.flight_timer.start(1000)
+            self.flight_start_time = datetime.datetime.now()
+            # Create flight folder
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.current_flight_folder = os.path.join(FLIGHTS_FOLDER, f"flight_{timestamp}")
+            os.makedirs(self.current_flight_folder, exist_ok=True)
+
+            # Start video stream
+            self.stream_label.setText("Stream On")
+            self.drone.streamon()
+            print("Take off successful")
 
     def land(self):
-        if not self.is_flying:
-            QMessageBox.warning(self, "Drone Status", "Το drone δεν είναι στον αέρα!")
-            return
-
-        self.drone.land()
-        self.is_flying = False
-        self.stop_video_stream()
-
-        # Calculate flight duration
-        flight_end_time = datetime.datetime.now()
-        duration = flight_end_time - self.flight_start_time
-
-        QMessageBox.information(self, "Drone Status", f"Η πτήση ολοκληρώθηκε!\nΔιάρκεια: {duration}")
-
-        # Process the flight video
-        self.process_flight_video(duration)
-
+        if self.is_flying:
+            self.is_flying = False
+            self.flight_timer.stop()
+            self.stream_label.setText("Stream Off")
+            self.drone.streamoff()
+            print("Landing successful")
+            
+            self.flight_end_time = datetime.datetime.now()
+            duration = self.flight_end_time - self.flight_start_time
+            QMessageBox.information(self, "Drone Status", f"Η πτήση ολοκληρώθηκε!\nΔιάρκεια: {duration}")
+            # Process flight video
+            self.process_flight_video(duration)
+            self.update_history_button()
+            
     def process_flight_video(self, duration):
         """Process the flight video using video_process.py."""
         # Supported video formats
@@ -242,7 +348,7 @@ class DroneControlApp(QMainWindow):
         # Search for a video file in the flight folder
         video_path = None
         for fmt in video_formats:
-            potential_path = os.path.join(self.flight_folder, f"flight_video{fmt}")
+            potential_path = os.path.join(self.current_flight_folder, f"flight_video{fmt}")
             if os.path.exists(potential_path):
                 video_path = potential_path
                 break
@@ -257,8 +363,6 @@ class DroneControlApp(QMainWindow):
         else:
             # Show warning if no video is found
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
-        
-
 
     def update_history_button(self):
         """Enable the history button if runs folder has content."""
@@ -268,67 +372,75 @@ class DroneControlApp(QMainWindow):
         else:
             self.history_button.setEnabled(False)
 
-    
-    
+    def move_forward(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving forward...")
+
+    def move_backward(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving backward...")
+
+    def move_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving left...")
+
+    def move_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving right...")
+
+    def move_up(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving up...")
+
+    def move_down(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving down...")
+
+    def rotate_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Rotating left...")
+
+    def rotate_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Rotating right...")
+
+    def flip_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Flipping left...")
+
+    def flip_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Flipping right...")
+
+    def view_flight_history(self):
+        # Launch report generation app
+        self.report_app = DroneReportApp()
+        self.report_app.show()
         
-    # def toggle_recording(self):
-    #     if not self.is_flying:
-    #         QMessageBox.warning(self, "Drone Status", "Το drone πρέπει να είναι στον αέρα για να γίνει εγγραφή βίντεο!")
-    #         return
-
-    #     if not self.recording:
-    #         video_file = os.path.join(self.flight_folder, "flight_video.avi")
-    #         fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    #         self.video_writer = cv2.VideoWriter(video_file, fourcc, 30.0, (640, 480))
-    #         self.recording = True
-    #         self.record_button.setText("Διακοπή Εγγραφής")
-    #     else:
-    #         self.recording = False
-    #         self.video_writer.release()
-    #         self.record_button.setText("Έναρξη Εγγραφής")
-
-    # def capture_photo(self):
-    #     if not self.is_flying:
-    #         QMessageBox.warning(self, "Drone Status", "Το drone πρέπει να είναι στον αέρα για να τραβήξετε φωτογραφία!")
-    #         return
-
-    #     ret, frame = self.video_capture.read()
-    #     if ret:
-    #         photo_file = os.path.join(self.flight_folder, f"photo_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
-    #         cv2.imwrite(photo_file, frame)
-    #         QMessageBox.information(self, "Drone Status", f"Η φωτογραφία αποθηκεύτηκε: {photo_file}")
-    
-    def capture_photo(self):
-        if not self.is_flying:
-            QMessageBox.warning(self, "Drone Status", "Το drone πρέπει να είναι στον αέρα για να τραβήξετε φωτογραφία!")
-            return
-
-        print("Mock: Capturing photo...")
-        QMessageBox.information(self, "Drone Status", "Mock photo captured successfully!")
-
-    def toggle_recording(self):
-        if not self.is_flying:
-            QMessageBox.warning(self, "Drone Status", "Το drone πρέπει να είναι στον αέρα για να γίνει εγγραφή βίντεο!")
-            return
-
-        if not self.recording:
-            print("Mock: Video recording started")
-            self.recording = True
-            self.record_button.setText("Διακοπή Εγγραφής")
-        else:
-            print("Mock: Video recording stopped")
-            self.recording = False
-            self.record_button.setText("Έναρξη Εγγραφής")
-
-    
-    def closeEvent(self, event):
-        self.stop_video_stream()
-        self.drone.end()
-        super().closeEvent(event)
 
 
 if __name__ == "__main__":
-    app = QApplication([])
+    app = QApplication(sys.argv)
     window = DroneControlApp()
     window.show()
     sys.exit(app.exec())
