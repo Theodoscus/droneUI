@@ -11,70 +11,81 @@ from PyQt6.QtGui import QKeyEvent
 from report_gen import DroneReportApp
 from video_process import run
 import pygame
-from PyQt6.QtCore import QTimer
 
+# Create a folder for saving flight data if it does not exist
 FLIGHTS_FOLDER = "flights"
 if not os.path.exists(FLIGHTS_FOLDER):
     os.makedirs(FLIGHTS_FOLDER)
 
+# Mock class to simulate the behavior of a drone
 class MockTello:
     def __init__(self):
+        # Tracks whether the drone is currently flying
         self.is_flying = False
+        # Tracks whether the video stream is active
         self.stream_on = False
 
     def connect(self):
+        # Simulates connecting to the drone
         print("Mock: Drone connected")
 
     def takeoff(self):
+        # Simulates the takeoff process of the drone
         if self.is_flying:
             print("Mock: Already flying!")
         else:
             print("Mock: Taking off...")
-            self.is_flying = True
+            self.is_flying = True  # Updates the state to flying
 
     def land(self):
+        # Simulates the landing process of the drone
         if not self.is_flying:
             print("Mock: Already landed!")
         else:
             print("Mock: Landing...")
-            self.is_flying = False
+            self.is_flying = False  # Updates the state to landed
 
     def streamon(self):
+        # Simulates starting the video stream from the drone
         self.stream_on = True
         print("Mock: Video stream started")
 
     def streamoff(self):
+        # Simulates stopping the video stream from the drone
         self.stream_on = False
         print("Mock: Video stream stopped")
 
     def end(self):
+        # Simulates disconnecting from the drone
         print("Mock: Drone disconnected")
 
+# Main class for the Drone Control Application
 class DroneControlApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drone Control")
-        self.setGeometry(100, 100, 1200, 800)
-        self.control_buttons = {}
-        
-        # Initialize Mock Tello
+        self.setWindowTitle("Drone Control")  # Set the window title
+        self.setGeometry(100, 100, 1200, 800)  # Set the window size
+        self.control_buttons = {}  # Dictionary to store control buttons
+
+        # Initialize the Mock Drone
         self.drone = MockTello()
         self.drone.connect()
-        self.is_flying = False
-        self.flight_duration = 0
-        self.battery_level = 100
-        self.height = 0
-        self.speed = 0
-        self.current_flight_folder = None
-        self.flight_timer = QTimer()
-        self.flight_timer.timeout.connect(self.update_flight_duration)
+        self.is_flying = False  # Tracks if the drone is flying
+        self.flight_duration = 0  # Tracks the flight duration
+        self.battery_level = 100  # Battery level of the drone
+        self.height = 0  # Height of the drone
+        self.speed = 0  # Speed of the drone
+        self.current_flight_folder = None  # Folder to save flight data
+        self.flight_timer = QTimer()  # Timer to update flight duration
+        self.flight_timer.timeout.connect(self.update_flight_duration) 
 
+        # Initialize the User Interface
         self.init_ui()
 
-        # Timer to update UI stats
+        # Timer to update UI statistics
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui_stats)
-        self.ui_timer.start(2000)
+        self.ui_timer.start(2000)  # Update every 2 seconds
 
         # Initialize Xbox Controller
         pygame.init()
@@ -82,12 +93,12 @@ class DroneControlApp(QMainWindow):
         self.controller = None
         self.update_controller_status()
 
-        # Timer to poll controller input
+        # Timer to poll Xbox controller input
         self.controller_timer = QTimer()
         self.controller_timer.timeout.connect(self.poll_controller_input)
-        self.controller_timer.start(50)  # Check every 50ms
-        
-        # Key mapping
+        self.controller_timer.start(50)  # Poll every 50ms
+
+        # Key mapping for keyboard controls
         self.key_pressed_mapping = {
             Qt.Key.Key_W: self.move_forward,
             Qt.Key.Key_S: self.move_backward,
@@ -103,14 +114,14 @@ class DroneControlApp(QMainWindow):
             Qt.Key.Key_Right: self.rotate_right,
         }
 
+    # Initialize the User Interface
     def init_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
 
-        # Connection status
-        # Connection status
+        # Connection status label
         self.connection_status = QLabel("CONNECTED")
         self.connection_status.setStyleSheet(
             "background-color: green; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
@@ -124,7 +135,7 @@ class DroneControlApp(QMainWindow):
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout)
         
-        # Add Notification Label
+        # Low battery warning label
         self.notification_label = QLabel("")
         self.notification_label.setStyleSheet("color: red; font-size: 16px; font-weight: bold;")
         self.notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -132,7 +143,7 @@ class DroneControlApp(QMainWindow):
         main_layout.addWidget(self.notification_label)
 
 
-        # Left Panel
+        # Left panel layout for drone stats and controls
         left_panel = QVBoxLayout()
 
         # Battery Group Box
@@ -148,11 +159,7 @@ class DroneControlApp(QMainWindow):
 
         battery_layout.addWidget(self.battery_bar)
         battery_box.setLayout(battery_layout)
-
-        # Set fixed size for the group box to make it compact
-        battery_box.setFixedHeight(60)  # Height: 60px
-        #battery_box.setMaximumWidth(400)
-
+        battery_box.setFixedHeight(60)  # Set fixed height to make it compact
         left_panel.addWidget(battery_box)
 
         # Controller Status Box
@@ -168,7 +175,7 @@ class DroneControlApp(QMainWindow):
         left_panel.addWidget(controller_status_box)
 
 
-        # Info Group Box
+        # Drone information group box
         info_box = QGroupBox("Drone Info")
         info_layout = QVBoxLayout()
         self.info_labels = {
@@ -186,16 +193,16 @@ class DroneControlApp(QMainWindow):
         info_box.setLayout(info_layout)
         left_panel.addWidget(info_box)
 
-        content_layout.addLayout(left_panel)
+        content_layout.addLayout(left_panel) #Add to layout
 
-        # Center Panel (Live Stream) with updated size
+        # Center panel for live stream
         self.stream_label = QLabel("Drone Stream Placeholder")
         self.stream_label.setStyleSheet("background-color: #000; color: white; font-size: 14px; border: 1px solid #555;")
         self.stream_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stream_label.setFixedSize(1280, 720)  # Set size for 720p video
         content_layout.addWidget(self.stream_label)
 
-        # Bottom Controls - Compact Layout
+        # Drone control buttons layout
         controls_layout = QVBoxLayout()
 
         # Row 1: Top Movement Controls
@@ -247,6 +254,7 @@ class DroneControlApp(QMainWindow):
         self.update_history_button()
 
 
+    # Update the controller status and enable/disable controls accordingly
     def update_controller_status(self):
         if pygame.joystick.get_count() > 0:
             if not self.controller:
@@ -260,7 +268,8 @@ class DroneControlApp(QMainWindow):
             self.controller_status_label.setText("No Controller Connected")
             self.controller_status_label.setStyleSheet("color: red; font-size: 14px; font-weight: bold;")
             self.set_controls_enabled(True)  # Enable buttons and keyboard control
-
+            
+    # Enable or disable all control buttons
     def set_controls_enabled(self, enabled):
         # Disable or enable all control buttons
         for button in self.control_buttons.values():
@@ -270,7 +279,7 @@ class DroneControlApp(QMainWindow):
         self.keyboard_control_enabled = enabled
 
 
-    
+    # Poll input from the Xbox controller
     def poll_controller_input(self):
         pygame.event.pump()  # Process controller events
         controller_count = pygame.joystick.get_count()
@@ -286,7 +295,7 @@ class DroneControlApp(QMainWindow):
                 elif event.type == pygame.JOYAXISMOTION:
                     self.handle_axis_motion(event.axis, event.value)
 
-    
+    # Handle button press events from the Xbox controller
     def handle_button_press(self, button):
         """Map controller buttons to drone actions."""
         if button == 0:  # Example: Button A
@@ -298,6 +307,7 @@ class DroneControlApp(QMainWindow):
         elif button == 3:  # Example: Button Y
             self.flip_right()
 
+    # Handle joystick axis motion from the Xbox controller
     def handle_axis_motion(self, axis, value):
         """Map joystick axes to drone movement."""
         if axis == 0:  # Left joystick horizontal
@@ -322,7 +332,7 @@ class DroneControlApp(QMainWindow):
                 self.move_down()
 
 
-    
+    # Dynamically create a button for control and map it to an action
     def create_control_button(self, key, action, color=None):
         button = QPushButton(f"{key}\n({action})")
         if color:
@@ -331,7 +341,7 @@ class DroneControlApp(QMainWindow):
         self.control_buttons[action] = button  # Store button in the dictionary
         return button
 
-    
+    # Map button actions to their corresponding methods
     def create_button_handler(self, action):
         def handler():
             # Adjust method name mapping for consistency
@@ -363,18 +373,19 @@ class DroneControlApp(QMainWindow):
 
         return handler
 
-
+    # Handle keyboard input events
     def keyPressEvent(self, event: QKeyEvent):
         if not self.keyboard_control_enabled:
             return  # Ignore keyboard input if disabled
         if event.key() in self.key_pressed_mapping:
             self.key_pressed_mapping[event.key()]()
 
-
+    # Update the flight duration
     def update_flight_duration(self):
         self.flight_duration += 1
         self.info_labels["Flight Duration"].setText(f"{self.flight_duration} sec")
 
+    # Update UI stats dynamically
     def update_ui_stats(self):
         self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
         self.height = random.randint(0, 500) if self.is_flying else 0
@@ -394,7 +405,7 @@ class DroneControlApp(QMainWindow):
         self.info_labels["Height"].setText(f"{self.height} cm")
         self.info_labels["Speed"].setText(f"{self.speed:.2f} cm/s")
 
-
+    # Take off action for the drone
     def take_off(self):
         self.history_button.setEnabled(False)
         if not self.is_flying:
@@ -411,6 +422,7 @@ class DroneControlApp(QMainWindow):
             self.drone.streamon()
             print("Take off successful")
 
+    # Land action for the drone
     def land(self):
         if self.is_flying:
             self.is_flying = False
@@ -425,7 +437,8 @@ class DroneControlApp(QMainWindow):
             # Process flight video
             self.process_flight_video(duration)
             self.update_history_button()
-            
+      
+    # Flight video processing by passing it through the run() method        
     def process_flight_video(self, duration):
         """Process the flight video using video_process.py."""
         # Supported video formats
@@ -450,8 +463,9 @@ class DroneControlApp(QMainWindow):
             # Show warning if no video is found
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
 
+    # Enable the history button if runs folder has content.
     def update_history_button(self):
-        """Enable the history button if runs folder has content."""
+        
         runs_dir = "runs"
         if os.path.exists(runs_dir) and os.listdir(runs_dir):
             self.history_button.setEnabled(True)
@@ -517,9 +531,10 @@ class DroneControlApp(QMainWindow):
             print("Drone cannot move because it has not taken off.")
             return
         print("Flipping right...")
-
+        
+    # Launch report generation app
     def view_flight_history(self):
-        # Launch report generation app
+        
         self.report_app = DroneReportApp()
         self.report_app.show()
         
