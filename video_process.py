@@ -21,7 +21,7 @@ def initialize_model(model_path):
 def track_and_detect(model, frame):
     # Run YOLO tracking on a single frame each time
     # We can also adjust the parameters for more accurate and faster results
-    results = model.track(source=frame, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True)
+    results = model.track(source=frame, persist=True, imgsz=640, conf=0.05, augment=True, agnostic_nms=True)
     return results
 
 
@@ -76,6 +76,20 @@ def save_tracking_data_to_db(cursor, tracking_data, duration):
 
 
 def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_folder):
+    # Color mapping for different classes
+    class_colors = {
+        "Healthy": (0, 255, 0),  # Green for healthy
+        "Early blight": (0, 165, 255),  # Orange
+        "Late blight": (0, 0, 255),  # Red
+        "Bacterial Spot": (255, 0, 255),  # Purple
+        "Leaf Mold": (255, 255, 0),  # Yellow
+        "Leaf Miner": (0, 255, 255),  # Cyan
+        "Mosaic Virus": (0, 255, 0),  # Bright Green
+        "Septoria": (255, 165, 0),  # Light Orange
+        "Spider Mites": (75, 0, 130),  # Indigo
+        "Yellow Leaf Curl Virus": (238, 130, 238),  # Violet
+    }
+
     # Process detections in the frame
     for result in results[0].boxes:
         # Skip untracked objects
@@ -88,6 +102,9 @@ def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_f
         track_id = int(result.id[0])  # Track ID
         class_name = results[0].names[class_id]  # Get class name
 
+        # Get box color for the class
+        box_color = class_colors.get(class_name, (255, 255, 255))  # Default to white if not found
+
         # Prepare tracking data for saving
         bbox_str = f"{box[0]:.2f},{box[1]:.2f},{box[2]:.2f},{box[3]:.2f}"
         tracking_data.append((frame_count, track_id, class_name, bbox_str, conf))
@@ -97,21 +114,31 @@ def process_frame(results, frame, frame_count, tracking_data, saved_ids, photo_f
             saved_ids.add(track_id)  # Mark the ID as saved
             save_object_photo(frame, box, track_id, class_name, photo_folder)
 
+        # Add padding to the bounding box
+        padding = 10
+        x_min = max(0, int(box[0]) - padding)
+        y_min = max(0, int(box[1]) - padding)
+        x_max = min(frame.shape[1], int(box[2]) + padding)
+        y_max = min(frame.shape[0], int(box[3]) + padding)
+
         # Annotate frame with bounding box and labels
-        label = f"ID {track_id}: {class_name} ({conf:.2f})"
-        x_min, y_min, x_max, y_max = map(int, box)
-        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (255, 255, 255), 3)  # White bounding box, thicker
+        label = f"ID {track_id}: {class_name} ({conf * 100:.2f}%)"
+        font_scale = 1.5  # Bigger font size
+        font_thickness = 3  # Thicker text
+
+        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), box_color, 4)  # Thicker bounding box
         cv2.putText(
             frame,
             label,
-            (x_min, y_min - 10),
+            (x_min, y_min - 15),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1,  # Increased font size
-            (255, 255, 255),
-            2,  # Thicker text
+            font_scale,
+            box_color,
+            font_thickness,
         )
 
     return frame
+
 
 
 

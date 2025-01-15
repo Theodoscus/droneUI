@@ -91,21 +91,45 @@ class DroneReportApp(QMainWindow):
 
         chart_frame = QFrame()
         chart_frame.setStyleSheet("border: 1px solid gray; padding: 10px;")
-        chart_frame.setMinimumHeight(400)
+        chart_frame.setMinimumHeight(500)
         chart_layout = QVBoxLayout(chart_frame)
         chart_layout.addWidget(self.canvas)
         main_layout.addWidget(chart_frame)
+        
+        
+
 
         # Image section: shows images of affected plants
         image_frame = QFrame()
         image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
         image_layout = QVBoxLayout(image_frame)
         
+        
+        
         # Label for the image section
         self.image_label = QLabel("Φύλλα με ασθένειες που εντοπίστηκαν στην πτήση")
         self.image_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_layout.addWidget(self.image_label)
+        
+        # Disease Information Box
+        info_frame = QFrame()
+        info_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f1f1f1;")
+        info_layout = QVBoxLayout(info_frame)
+
+        self.disease_label = QLabel("Disease: --")
+        self.disease_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
+        info_layout.addWidget(self.disease_label)
+
+        self.plant_id_label = QLabel("Plant ID: --")
+        self.plant_id_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
+        info_layout.addWidget(self.plant_id_label)
+
+        self.confidence_label = QLabel("Confidence: --%")
+        self.confidence_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
+        info_layout.addWidget(self.confidence_label)
+
+        image_layout.addWidget(info_frame)  # Add the info frame above the image
 
         # Placeholder image
         self.placeholder_image = QLabel()
@@ -199,40 +223,66 @@ class DroneReportApp(QMainWindow):
 
     
     def draw_chart(self, categories=None, values=None):
-        # Create a bar chart with the provided data 
+        # Greek disease name mapping from the file
+        disease_translation = {
+            "Healthy": "Υγιή",
+            "Early Βlight": "Αλτερναρίωση",
+            "Late Βlight": "Περονόσπορος",
+            "Bacterial Spot": "Βακτηριακή Κηλίδωση",
+            "Leaf Mold": "Κλαδοσπορίωση",
+            "Leaf_Miner": "Φυλλοκνίστης",
+            "Mosaic Virus": "Ιός του Μωσαικού",
+            "Septoria": "Αδηλομήκυτας",
+            "Spider Mites": "Τετράνυχος",
+            "Yellow Leaf Curl Virus": "Ιός του Κίτρινου Καρουλιάσματος"
+        }
+
         if categories is None or values is None:
             categories = []
             values = []
 
-        self.ax.clear() # Clear any existing chart
+        self.ax.clear()  # Clear any existing chart
 
         # Ensure "Healthy" is included in the chart
         if "Healthy" not in categories:
-            categories.append("Healthy")
+            categories.append("Υγιή")
             values.append(0)
+
+        # Translate category names to Greek if available
+        translated_categories = [
+            disease_translation.get(category, category) for category in categories
+        ]
 
         # Determine maximum value for scaling the chart
         max_value = max(values) if values else 0
         y_max = max_value + 100  # Add some padding for better visibility
 
         # Draw the bars and add value annotations
-        bars = self.ax.bar(categories, values, color='gray')
+        bars = self.ax.bar(translated_categories, values, color="gray")
 
         # Add labels above bars
         for bar, value in zip(bars, values):
-            self.ax.annotate(f"{value}", xy=(bar.get_x() + bar.get_width() / 2, value),
-                            xytext=(0, 5), textcoords="offset points", ha='center', va='bottom', fontsize=10)
+            self.ax.annotate(
+                f"{value}",
+                xy=(bar.get_x() + bar.get_width() / 2, value),
+                xytext=(0, 5),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
 
         # Set chart title and labels
         self.ax.set_title("Κατάσταση Φύλλων", fontsize=16)
         self.ax.set_ylabel("Αριθμός Φύλλων", fontsize=12)
-        self.ax.set_xticks(range(len(categories)))
-        self.ax.set_xticklabels(categories, rotation=45, ha="right", fontsize=10)
+        self.ax.set_xticks(range(len(translated_categories)))
+        self.ax.set_xticklabels(translated_categories, rotation=30, ha="right", fontsize=10, wrap=True)
         self.ax.set_ylim(0, y_max)
 
         # Adjust chart layout and update the canvas
-        self.figure.subplots_adjust(bottom=0.3, top=0.9)
+        self.figure.subplots_adjust(bottom=0.4, top=0.9)
         self.canvas.draw()
+
 
 
 
@@ -254,68 +304,16 @@ class DroneReportApp(QMainWindow):
 
 
     def export_to_pdf(self):
-        """Export flight report to a visually appealing PDF."""
-        if not self.current_flight_folder:
-            QMessageBox.warning(self, "Error", "No flight data loaded.")
-            return
+       print("empty")
 
-        db_path = os.path.join(self.current_flight_folder, "flight_data.db")
-        photos_folder = os.path.join(self.current_flight_folder, "photos")
-        pdf_path = os.path.join(self.current_flight_folder, "flight_report.pdf")
 
-        # Load data from the database
-        conn = sqlite3.connect(db_path)
-        query = "SELECT ID, Class, Confidence FROM flight_results WHERE Class != 'Healthy'"
-        results = pd.read_sql_query(query, conn)
-        conn.close()
 
-        # Prepare the document
-        doc = SimpleDocTemplate(pdf_path, pagesize=A4)
-        styles = getSampleStyleSheet()
-        elements = []
 
-        # Title and Metadata
-        elements.append(Paragraph("Flight Report", styles['Title']))
-        elements.append(Spacer(1, 0.2 * inch))
-        elements.append(Paragraph(f"Date and Time: {self.flight_time_label.text()}", styles['Normal']))
-        elements.append(Paragraph(f"Flight Duration: {self.flight_duration_label.text()}", styles['Normal']))
-        elements.append(Paragraph(f"Total Plants Analyzed: {self.plants_analyzed_label.text()}", styles['Normal']))
-        elements.append(Paragraph(f"Affected Plants: {self.affected_plants_label.text()}", styles['Normal']))
-        elements.append(Spacer(1, 0.3 * inch))
 
-        # Add a bar chart
-        chart_path = os.path.join(self.current_flight_folder, "chart.png")
-        self.generate_chart(chart_path, results)  # Generate the chart
-        elements.append(Image(chart_path, width=5 * inch, height=3 * inch))
-        elements.append(Spacer(1, 0.3 * inch))
 
-        # Add a table of affected plants
-        elements.append(Paragraph("Details of Affected Plants:", styles['Heading2']))
-        table_data = [["ID", "Class", "Confidence"]]
-        table_data += results.values.tolist()
-        table = Table(table_data, colWidths=[1.5 * inch, 2 * inch, 1.5 * inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ]))
-        elements.append(table)
-        elements.append(Spacer(1, 0.3 * inch))
 
-        # Add photos of affected plants
-        elements.append(Paragraph("Photos of Affected Plants:", styles['Heading2']))
-        photo_files = [os.path.join(photos_folder, f) for f in os.listdir(photos_folder) if f.endswith(".jpg")]
-        for photo_file in photo_files[:5]:  # Limit to 5 photos for the report
-            elements.append(Image(photo_file, width=3 * inch, height=2 * inch))
-            elements.append(Spacer(1, 0.2 * inch))
 
-        # Build the document
-        doc.build(elements)
-        QMessageBox.information(self, "PDF Exported", f"PDF saved to {pdf_path}")
+
 
     def generate_chart(self, chart_path, results):
         """Generate a bar chart for affected plant statistics and save it to a file."""
@@ -438,12 +436,52 @@ class DroneReportApp(QMainWindow):
         # Get the current photo file
         photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])
 
+        # Extract details from the database
+        conn = sqlite3.connect(os.path.join(self.current_flight_folder, "flight_data.db"))
+        cursor = conn.cursor()
+
+        # Retrieve the plant ID from the photo filename
+        plant_id = int(photo_file.split("_ID")[-1].replace(".jpg", ""))
+
+        # Query the database for details of the selected plant
+        query = "SELECT Class, Confidence FROM flight_results WHERE ID = ? ORDER BY Confidence DESC LIMIT 1"
+        cursor.execute(query, (plant_id,))
+        result = cursor.fetchone()
+
+        # Greek disease name mapping
+        disease_translation = {
+            "Early blight": "Αλτερναρίωση",
+            "Late blight": "Περονόσπορος",
+            "Bacterial Spot": "Βακτηριακή Κηλίδωση",
+            "Leaf Mold": "Κλαδοσπορίωση",
+            "Leaf_Miner": "Φυλλοκνίστης",
+            "Mosaic Virus": "Ιός του Μωσαικού",
+            "Septoria": "Αδηλομήκυτας",
+            "Spider Mites": "Τετράνυχος",
+            "Yellow Leaf Curl Virus": "Ιός του Κίτρινου Καρουλιάσματος",
+        }
+
+        if result:
+            disease, confidence = result
+            translated_disease = disease_translation.get(disease, disease)  # Translate disease if possible
+            self.disease_label.setText(f"Ασθένεια: {translated_disease}")
+            self.plant_id_label.setText(f"ID Φυτού: {plant_id}")
+            self.confidence_label.setText(f"Βεβαιότητα: {confidence * 100:.2f}%")
+        else:
+            self.disease_label.setText("Ασθένεια: --")
+            self.plant_id_label.setText("ID Φυτού: --")
+            self.confidence_label.setText("Βεβαιότητα: --%")
+
+        conn.close()
+
         # Load and display the image
         pixmap = QPixmap(photo_file)
         if not pixmap.isNull():
             self.placeholder_image.setPixmap(pixmap.scaled(self.placeholder_image.size(), Qt.AspectRatioMode.KeepAspectRatio))
         else:
-            self.placeholder_image.setText("Error loading image")
+            self.placeholder_image.setText("Σφάλμα φόρτωσης εικόνας")
+
+
 
     def navigate_photos(self, direction):
         # Navigate through the photos in the carousel
@@ -620,7 +658,7 @@ class ZoomableImageDialog(QDialog):
         self.setMinimumSize(self.pixmap.width(), self.pixmap.height())
 
     def zoom_image(self, value):
-        """Zoom the image based on the slider value."""
+        # Zoom the image based on the slider value
         scale_factor = value / 100.0
         self.graphics_view.resetTransform()  # Reset any existing transformations
         self.graphics_view.scale(scale_factor, scale_factor)  # Apply new scale
