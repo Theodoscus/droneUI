@@ -19,6 +19,10 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
+from countermeasures import CounterMeasuresWindow
+from PyQt6.QtGui import QPainter, QFont
+from PyQt6.QtPrintSupport import QPrinter
+
 
 
 class DroneReportApp(QMainWindow):
@@ -189,6 +193,7 @@ class DroneReportApp(QMainWindow):
         # Button for countermeasures or additional actions
         countermeasures_button = QPushButton("Τρόποι αντιμετώπισης")
         countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
+        countermeasures_button.clicked.connect(self.show_countermeasures)
         footer_layout.addWidget(countermeasures_button)
 
         main_layout.addLayout(footer_layout)
@@ -303,7 +308,11 @@ class DroneReportApp(QMainWindow):
         self.affected_plants_label.setText(f"Επηρεασμένα φύλλα: {affected_plants}")
 
 
-    def export_to_pdf(self):
+    
+
+    
+
+    def export_to_pdf(self, filename="report.pdf"):
        print("empty")
 
 
@@ -313,20 +322,63 @@ class DroneReportApp(QMainWindow):
 
 
 
+    def save_chart_as_image(self, filename="chart.png"):
+        """
+        Save the chart to a file as an image.
+        """
+        self.figure.savefig(filename, bbox_inches="tight", dpi=300)
 
 
-    def generate_chart(self, chart_path, results):
-        """Generate a bar chart for affected plant statistics and save it to a file."""
-        class_counts = results["Class"].value_counts()  # Count occurrences of each class
-        plt.figure(figsize=(8, 4))  # Create a new figure with specified dimensions
-        class_counts.plot(kind="bar", color="gray")  # Plot a bar chart
-        plt.title("Affected Plants by Class")  # Add a title to the chart
-        plt.xlabel("Class")  # Label for the x-axis
-        plt.ylabel("Count")  # Label for the y-axis
-        plt.xticks(rotation=45)  # Rotate x-axis labels for better readability
-        plt.tight_layout()  # Adjust layout to prevent overlap
-        plt.savefig(chart_path)  # Save the chart to the specified path
-        plt.close()  # Close the figure to free memory
+
+
+    def show_countermeasures(self):
+        
+        disease_translation = {
+            "Early blight": "Αλτερναρίωση",
+            "Late blight": "Περονόσπορος",
+            "Bacterial Spot": "Βακτηριακή Κηλίδωση",
+            "Leaf Mold": "Κλαδοσπορίωση",
+            "Leaf_Miner": "Φυλλοκνίστης",
+            "Mosaic Virus": "Ιός του Μωσαϊκού",
+            "Septoria": "Αδηλομήκυτας",
+            "Spider Mites": "Τετράνυχος",
+            "Yellow Leaf Curl Virus": "Ιός του Κίτρινου Καρουλιάσματος"
+        }
+        # Path to the SQLite database
+        db_path = os.path.join(self.current_flight_folder, "flight_data.db")
+        if not os.path.exists(db_path):
+            QMessageBox.warning(self, "Σφάλμα", "Η βάση δεδομένων πτήσης δεν βρέθηκε.")
+            return
+
+        # Query to get non-healthy diseases with higher confidence
+        query = """
+            SELECT ID,
+                MAX(CASE WHEN Class = 'Healthy' THEN Confidence ELSE 0 END) AS HealthyConfidence,
+                MAX(CASE WHEN Class != 'Healthy' THEN Confidence ELSE 0 END) AS NonHealthyConfidence,
+                MAX(CASE WHEN Class != 'Healthy' THEN Class ELSE NULL END) AS NonHealthyClass
+            FROM flight_results
+            GROUP BY ID
+            HAVING NonHealthyConfidence > HealthyConfidence
+        """
+
+        conn = sqlite3.connect(db_path)
+        results = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Extract unique non-healthy diseases and translate them to Greek
+        diseases = results["NonHealthyClass"].dropna().unique().tolist()
+        translated_diseases = [disease_translation.get(disease, disease) for disease in diseases]
+
+        if not translated_diseases:
+            QMessageBox.information(self, "Δεν Βρέθηκαν Ασθένειες", "Δεν ανιχνεύθηκαν μη υγιή φυτά σε αυτή την πτήση.")
+            return
+
+        # Open the CounterMeasuresWindow with Greek disease names
+        countermeasures_window = CounterMeasuresWindow(translated_diseases, self)
+        countermeasures_window.exec()
+
+
+
         
     def load_results(self, flight_folder):
         # Load flight data from the specified folder and display it in the UI
