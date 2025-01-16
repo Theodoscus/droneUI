@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt
 from time import time, strftime, gmtime
 
 BASE_OUTPUT_FOLDER = "runs"
-BATCH_SIZE = 8  # Number of frames to process in a batch
+BATCH_SIZE = 4  # Number of frames to process in a batch
 
 def initialize_model(model_path):
     # Load the YOLO model
@@ -20,7 +20,7 @@ def initialize_model(model_path):
 
 def track_and_detect_batch(model, frames):
     # Run YOLO tracking on a batch of frames
-    results = model.track(source=frames, persist=True, imgsz=640, conf=0.05, augment=True, agnostic_nms=True, batch=-1)
+    results = model.track(source=frames, persist=True, imgsz=1280, conf=0.05, augment=True, agnostic_nms=True, batch=-1)
     return results
 
 def create_output_folder(base_folder):
