@@ -12,6 +12,7 @@ from report_gen import DroneReportApp
 from video_process import run
 import pygame
 
+
 # Create a folder for saving flight data if it does not exist
 FLIGHTS_FOLDER = "flights"
 if not os.path.exists(FLIGHTS_FOLDER):
@@ -58,6 +59,66 @@ class MockTello:
     def end(self):
         # Simulates disconnecting from the drone
         print("Mock: Drone disconnected")
+        
+    def move_forward(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving forward...")
+
+    def move_backward(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving backward...")
+
+    def move_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving left...")
+
+    def move_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving right...")
+
+    def move_up(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving up...")
+
+    def move_down(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Moving down...")
+
+    def rotate_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Rotating left...")
+
+    def rotate_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Rotating right...")
+
+    def flip_left(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Flipping left...")
+
+    def flip_right(self):
+        if not self.is_flying:
+            print("Drone cannot move because it has not taken off.")
+            return
+        print("Flipping right...")
 
 # Main class for the Drone Control Application
 class DroneControlApp(QMainWindow):
@@ -70,7 +131,8 @@ class DroneControlApp(QMainWindow):
         # Initialize the Mock Drone
         self.drone = MockTello()
         self.drone.connect()
-        self.is_flying = False  # Tracks if the drone is flying
+        
+        self.drone.is_flying = False  # Tracks if the drone is flying
         self.flight_duration = 0  # Tracks the flight duration
         self.battery_level = 100  # Battery level of the drone
         self.height = 0  # Height of the drone
@@ -96,22 +158,22 @@ class DroneControlApp(QMainWindow):
         # Timer to poll Xbox controller input
         self.controller_timer = QTimer()
         self.controller_timer.timeout.connect(self.poll_controller_input)
-        self.controller_timer.start(50)  # Poll every 50ms
+        self.controller_timer.start(20)  # Poll every 50ms
 
         # Key mapping for keyboard controls
         self.key_pressed_mapping = {
-            Qt.Key.Key_W: self.move_forward,
-            Qt.Key.Key_S: self.move_backward,
-            Qt.Key.Key_A: self.move_left,
-            Qt.Key.Key_D: self.move_right,
-            Qt.Key.Key_Q: self.flip_left,
-            Qt.Key.Key_E: self.flip_right,
-            Qt.Key.Key_Return: self.take_off,
-            Qt.Key.Key_Space: self.land,
-            Qt.Key.Key_Up: self.move_up,
-            Qt.Key.Key_Down: self.move_down,
-            Qt.Key.Key_Left: self.rotate_left,
-            Qt.Key.Key_Right: self.rotate_right,
+            Qt.Key.Key_W: self.drone.move_forward,
+            Qt.Key.Key_S: self.drone.move_backward,
+            Qt.Key.Key_A: self.drone.move_left,
+            Qt.Key.Key_D: self.drone.move_right,
+            Qt.Key.Key_Q: self.drone.flip_left,
+            Qt.Key.Key_E: self.drone.flip_right,
+            Qt.Key.Key_Return: lambda: self.take_off(),  # Takeoff and trigger related action
+            Qt.Key.Key_P: self.land(),         # Land and trigger related action
+            Qt.Key.Key_Up: self.drone.move_up,
+            Qt.Key.Key_Down: self.drone.move_down,
+            Qt.Key.Key_Left: self.drone.rotate_left,
+            Qt.Key.Key_Right: self.drone.rotate_right,
         }
 
     # Initialize the User Interface
@@ -252,6 +314,8 @@ class DroneControlApp(QMainWindow):
         
         main_layout.addWidget(self.history_button)
         self.update_history_button()
+        
+        
 
 
     # Update the controller status and enable/disable controls accordingly
@@ -279,6 +343,7 @@ class DroneControlApp(QMainWindow):
         self.keyboard_control_enabled = enabled
 
 
+        
     # Poll input from the Xbox controller
     def poll_controller_input(self):
         pygame.event.pump()  # Process controller events
@@ -388,8 +453,8 @@ class DroneControlApp(QMainWindow):
     # Update UI stats dynamically
     def update_ui_stats(self):
         self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
-        self.height = random.randint(0, 500) if self.is_flying else 0
-        self.speed = random.uniform(0, 10) if self.is_flying else 0
+        self.height = random.randint(0, 500) if self.drone.is_flying else 0
+        self.speed = random.uniform(0, 10) if self.drone.is_flying else 0
 
         # Update battery progress bar
         self.battery_bar.setValue(self.battery_level)
@@ -408,8 +473,9 @@ class DroneControlApp(QMainWindow):
     # Take off action for the drone
     def take_off(self):
         self.history_button.setEnabled(False)
-        if not self.is_flying:
-            self.is_flying = True
+        if not self.drone.is_flying:
+            self.drone.is_flying = True
+            
             self.flight_timer.start(1000)
             self.flight_start_time = datetime.datetime.now()
             # Create flight folder
@@ -424,8 +490,8 @@ class DroneControlApp(QMainWindow):
 
     # Land action for the drone
     def land(self):
-        if self.is_flying:
-            self.is_flying = False
+        if self.drone.is_flying:
+            self.drone.is_flying = False
             self.flight_timer.stop()
             self.stream_label.setText("Stream Off")
             self.drone.streamoff()
@@ -437,6 +503,7 @@ class DroneControlApp(QMainWindow):
             # Process flight video
             self.process_flight_video(duration)
             self.update_history_button()
+            
       
     # Flight video processing by passing it through the run() method        
     def process_flight_video(self, duration):
@@ -456,7 +523,8 @@ class DroneControlApp(QMainWindow):
             # Process the video using video_process.py
             try:
                 run(video_path, duration)
-                self.update_history_button()
+                
+                
             except Exception as e:
                 QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
         else:
@@ -472,66 +540,7 @@ class DroneControlApp(QMainWindow):
         else:
             self.history_button.setEnabled(False)
 
-    def move_forward(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving forward...")
-
-    def move_backward(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving backward...")
-
-    def move_left(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving left...")
-
-    def move_right(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving right...")
-
-    def move_up(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving up...")
-
-    def move_down(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Moving down...")
-
-    def rotate_left(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Rotating left...")
-
-    def rotate_right(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Rotating right...")
-
-    def flip_left(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Flipping left...")
-
-    def flip_right(self):
-        if not self.is_flying:
-            print("Drone cannot move because it has not taken off.")
-            return
-        print("Flipping right...")
-        
+   
     # Launch report generation app
     def view_flight_history(self):
         
