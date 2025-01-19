@@ -11,7 +11,8 @@ from PyQt6.QtGui import QKeyEvent
 from report_gen import DroneReportApp
 from video_process import run
 import pygame
-from shared import open_homepage
+from shared import open_homepage, open_full_screen
+import threading
 
 
 # Mock class to simulate the behavior of a drone
@@ -121,7 +122,7 @@ class DroneControlApp(QMainWindow):
     def __init__(self, field_path):
         super().__init__()
         self.setWindowTitle("Drone Control")  # Set the window title
-        self.setGeometry(100, 100, 1200, 800)  # Set the window size
+        self.setGeometry(100,100,1200,800)
         self.control_buttons = {}  # Dictionary to store control buttons
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
@@ -145,11 +146,13 @@ class DroneControlApp(QMainWindow):
         self.flight_timer = QTimer()  # Timer to update flight duration
         self.flight_timer.timeout.connect(self.update_flight_duration) 
         
-        # Center the window on the screen
-        self.center_window()
+        
 
         # Initialize the User Interface
         self.init_ui()
+        
+        # Center the window on the screen
+        self.center_window()
 
         # Timer to update UI statistics
         self.ui_timer = QTimer()
@@ -326,20 +329,54 @@ class DroneControlApp(QMainWindow):
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.home_button.clicked.connect(self.go_to_homepage)
         main_layout.addWidget(self.home_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        
+        # Add Fullscreen Button
+        self.fullscreen_button = QPushButton("Full Screen Drone Operation")
+        self.fullscreen_button.setStyleSheet("font-size: 14px; padding: 10px; background-color: blue; color: white;")
+        self.fullscreen_button.setEnabled(True)  # Initially enabled as the drone is landed
+        self.fullscreen_button.clicked.connect(self.launch_fullscreen)
+        main_layout.addWidget(self.fullscreen_button)
+        
+    def debug_active_threads(self):
+        print("Active threads:")
+        for thread in threading.enumerate():
+            print(thread.name)
 
+    def launch_fullscreen(self):
+        """Launch the fullscreen drone operation page."""
+        # Stop any active timers
+        self.flight_timer.stop()
+        self.ui_timer.stop()
+        self.controller_timer.stop()
+        
+        self.fullscreen_window = open_full_screen(self.field_path)
+        self.fullscreen_window.show()
+        self.close()  # Close the current window     
         
         
     def center_window(self):
         """Centers the window on the screen."""
-        # Get the screen geometry
+        # Ensure the window is fully initialized and has its size calculated
+        self.show()  # Make sure the window is rendered before positioning
+        self.updateGeometry()  # Update the window's geometry
+
+        # Get the available geometry of the primary screen
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        
+
         # Calculate the center position
-        x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
-        y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
+        center_x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
+        center_y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
 
         # Move the window to the calculated position
-        self.move(x, y)
+        self.move(center_x, center_y)
+
+
+
+
+
+    
+
+    
 
 
 
@@ -393,33 +430,33 @@ class DroneControlApp(QMainWindow):
         elif button == 1:  # Example: Button B
             self.land()
         elif button == 2:  # Example: Button X
-            self.flip_left()
+            self.drone.flip_left()
         elif button == 3:  # Example: Button Y
-            self.flip_right()
+            self.drone.flip_right()
 
     # Handle joystick axis motion from the Xbox controller
     def handle_axis_motion(self, axis, value):
         """Map joystick axes to drone movement."""
         if axis == 0:  # Left joystick horizontal
             if value < -0.5:
-                self.move_left()
+                self.drone.move_left()
             elif value > 0.5:
-                self.move_right()
+                self.drone.move_right()
         elif axis == 1:  # Left joystick vertical
             if value < -0.5:
-                self.move_forward()
+                self.drone.move_forward()
             elif value > 0.5:
-                self.move_backward()
+                self.drone.move_backward()
         elif axis == 2:  # Right joystick horizontal
             if value < -0.5:
-                self.rotate_left()
+                self.drone.rotate_left()
             elif value > 0.5:
-                self.rotate_right()
+                self.drone.rotate_right()
         elif axis == 3:  # Right joystick vertical
             if value < -0.5:
-                self.move_up()
+                self.drone.move_up()
             elif value > 0.5:
-                self.move_down()
+                self.drone.move_down()
 
 
     # Dynamically create a button for control and map it to an action
@@ -480,7 +517,7 @@ class DroneControlApp(QMainWindow):
         self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
         self.fly_height = random.randint(0, 500) if self.drone.is_flying else 0
         self.speed = random.uniform(0, 10) if self.drone.is_flying else 0
-
+        self.debug_active_threads()
         # Update battery progress bar
         self.battery_bar.setValue(self.battery_level)
 
@@ -500,6 +537,7 @@ class DroneControlApp(QMainWindow):
         self.history_button.setEnabled(False)
         self.home_button.setEnabled(False)
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
+        print("here!!!!!!")
         if not self.drone.is_flying:
             self.drone.is_flying = True
             

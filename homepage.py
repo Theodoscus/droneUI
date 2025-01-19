@@ -17,7 +17,7 @@ class HomePage(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AgroDrone - Home")
-        self.setGeometry(200, 200, 600, 500)
+        # self.setGeometry(200, 200, 600, 500)
         self.init_ui()
         self.center_window()
         self.setFixedSize(600, 500)  # Set fixed width and height
