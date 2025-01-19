@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QApplica
 from PyQt6.QtCore import Qt
 from time import time, strftime, gmtime
 
-BASE_OUTPUT_FOLDER = "runs"
+
 BATCH_SIZE = 4  # Number of frames to process in a batch
 
 def initialize_model(model_path):
@@ -29,6 +29,7 @@ def create_output_folder(base_folder):
     run_folder = os.path.join(base_folder, f"run_{timestamp}")
     os.makedirs(run_folder, exist_ok=True)
     return run_folder
+
 
 def initialize_database(db_path):
     # Create an SQLite database and flight results table.
@@ -136,7 +137,13 @@ def process_frame(results, frames, frame_start_index, tracking_data, saved_ids, 
 
     return annotated_frames
 
-def process_video(video_path, model, output_folder, duration):
+def process_video(video_path, model, output_folder, duration, field_path):
+    # Ensure output folder is within the correct field path
+    base_folder = os.path.join(field_path, "runs")
+    if not output_folder.startswith(base_folder):
+        output_folder = os.path.join(base_folder, output_folder)
+    os.makedirs(output_folder, exist_ok=True)
+    
     # Process the entire video for plant tracking and disease detection.
     start_time = time()
     cap = cv2.VideoCapture(video_path)
@@ -238,11 +245,14 @@ def process_video(video_path, model, output_folder, duration):
     total_processing_time = end_time - start_time
     formatted_processing_time = strftime("%H:%M:%S", gmtime(total_processing_time))
 
+    # After processing completes, update the field database
+    update_field_database(field_path)
+    
     print(f"Processing completed. Total video processing time: {formatted_processing_time}. Results saved in {output_folder}")
 
     # Display results in the report generation app
-    report_app = DroneReportApp()
-    report_app.load_results(output_folder)  # Load and display the results
+    report_app = DroneReportApp(field_path)
+    #report_app.load_results(output_folder)  # Load and display the results
     report_app.show()
 
 def save_object_photo(frame, bbox, track_id, class_name, photo_folder):
@@ -252,25 +262,140 @@ def save_object_photo(frame, bbox, track_id, class_name, photo_folder):
     photo_path = os.path.join(photo_folder, f"{class_name}_ID{track_id}.jpg")
     cv2.imwrite(photo_path, cropped_object)
 
-def run(video_path, duration):
-    # Run the video processing pipeline
+def run(video_path, duration, field_path):
+    # Dynamically create the runs folder inside the selected field folder
+    base_output_folder = os.path.join(field_path, "runs")
+    os.makedirs(base_output_folder, exist_ok=True)
+
+    # Load the YOLO model
     model_path = "yolol100.pt"
     model = initialize_model(model_path)
-    output_folder = create_output_folder(BASE_OUTPUT_FOLDER)
-    process_video(video_path, model, output_folder, duration)
+
+    # Create a unique run folder inside the base output folder
+    output_folder = create_output_folder(base_output_folder)
+
+    # Process the video
+    process_video(video_path, model, output_folder, duration, field_path)
+
+def update_field_database(field_path):
+    # Path to the consolidated field database
+    field_db_path = os.path.join(field_path, "field_data.db")
+
+    # Ensure the field database exists
+    conn = sqlite3.connect(field_db_path)
+    cursor = conn.cursor()
+
+    # Disease column names
+    diseases = [
+        "early_blight",
+        "late_blight",
+        "bacterial_spot",
+        "leaf_mold",
+        "leaf_miner",
+        "mosaic_virus",
+        "septoria",
+        "spider_mites",
+        "yellow_leaf_curl_virus"
+    ]
+
+    # Create the summary table
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS field_summary (
+            run_id TEXT PRIMARY KEY,
+            flight_datetime TEXT,
+            flight_duration TEXT,
+            total_plants INTEGER,
+            healthy_plants INTEGER,
+            {", ".join([f"{disease} INTEGER" for disease in diseases])}
+        )
+    """)
+    conn.commit()
+
+    # Iterate through all run databases in the `runs` folder
+    runs_folder = os.path.join(field_path, "runs")
+    for run_folder in os.listdir(runs_folder):
+        run_path = os.path.join(runs_folder, run_folder)
+        if not os.path.isdir(run_path):
+            continue
+
+        run_db_path = os.path.join(run_path, "flight_data.db")
+        if not os.path.exists(run_db_path):
+            continue
+
+        # Extract data from the individual run database
+        run_conn = sqlite3.connect(run_db_path)
+        run_cursor = run_conn.cursor()
+
+        try:
+            # Retrieve flight duration from the first row
+            run_cursor.execute("SELECT FlightDuration FROM flight_results LIMIT 1")
+            flight_duration_row = run_cursor.fetchone()
+            flight_duration = flight_duration_row[0] if flight_duration_row else "Unknown"
+
+            # Query data from the run database
+            run_cursor.execute("""
+                SELECT 
+                    ID,
+                    Class,
+                    Confidence
+                FROM flight_results
+            """)
+            results = run_cursor.fetchall()
+
+            # Keep only the highest confidence label per plant ID
+            plant_data = {}
+            for plant_id, plant_class, confidence in results:
+                if plant_id not in plant_data or confidence > plant_data[plant_id][1]:
+                    plant_data[plant_id] = (plant_class, confidence)
+
+            # Summarize data for the run
+            total_plants = len(plant_data)
+            healthy_plants = sum(1 for plant_class, _ in plant_data.values() if plant_class == "Healthy")
+
+            # Count affected plants per disease
+            disease_counts = {disease: 0 for disease in diseases}
+            for plant_class, _ in plant_data.values():
+                key = plant_class.lower().replace(" ", "_")
+                if key in disease_counts:
+                    disease_counts[key] += 1
+
+            # Get flight datetime from the run folder name
+            run_id = run_folder
+            flight_datetime = run_folder.split("_", 1)[-1]
+
+            # Insert data into the field database
+            cursor.execute(f"""
+                INSERT OR REPLACE INTO field_summary (
+                    run_id, flight_datetime, flight_duration, 
+                    total_plants, healthy_plants, {", ".join(diseases)}
+                ) VALUES (?, ?, ?, ?, ?, {", ".join("?" * len(diseases))})
+            """, (run_id, flight_datetime, flight_duration, total_plants, healthy_plants, *[disease_counts[disease] for disease in diseases]))
+        except sqlite3.Error as e:
+            print(f"Error processing run database {run_db_path}: {e}")
+        finally:
+            run_conn.close()
+
+    # Commit and close the field database connection
+    conn.commit()
+    conn.close()
+
 
     
 
 class LoadingDialog(QDialog):
-    # A simple dialog with a progress bar for video processing
+    """A simple dialog with a progress bar for video processing."""
     def __init__(self, total_frames, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Processing Video")
+        self.setWindowTitle("Επεξεργασία Βίντεο")
         self.setGeometry(400, 200, 400, 150)
+
+        # Set window flags to disable close, minimize, and maximize buttons
+        self.setWindowFlags(Qt.WindowType.WindowTitleHint | Qt.WindowType.CustomizeWindowHint)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)  # Block interaction with other windows
 
         # Layout and widgets
         layout = QVBoxLayout(self)
-        self.label = QLabel("Processing video, please wait...")
+        self.label = QLabel("Επεξεργασία βίντεο, παρακαλώ περιμένετε...")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.label)
 
@@ -278,13 +403,12 @@ class LoadingDialog(QDialog):
         self.progress_bar.setRange(0, total_frames)
         self.progress_bar.setValue(0)  # Initialize progress at 0%
         layout.addWidget(self.progress_bar)
-        
+
         # Force the window to display immediately
-        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.show()
         QApplication.processEvents()  # Ensure the GUI updates before processing begins
 
     def update_progress(self, frame_index):
-        # Update the progress bar.
+        """Update the progress bar."""
         self.progress_bar.setValue(frame_index)
         QApplication.processEvents()

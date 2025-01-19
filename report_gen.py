@@ -22,15 +22,23 @@ from reportlab.lib.styles import getSampleStyleSheet
 from countermeasures import CounterMeasuresWindow
 from PyQt6.QtGui import QPainter, QFont
 from PyQt6.QtPrintSupport import QPrinter
+from field_progress import FieldProgressPage
 
 
 
 class DroneReportApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, field_path):
         # Initialize the main application window
         super().__init__()
         self.setWindowTitle("Drone Flight Report")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 50, 1200, 800)
+        
+        # Store the field path
+        self.field_path = field_path
+        
+        # Set the runs folder inside the field path
+        self.runs_folder = os.path.join(self.field_path, "runs")
+        os.makedirs(self.runs_folder, exist_ok=True)  # Ensure the runs folder exists
 
         # Set up the main widget and layout
         main_widget = QWidget()
@@ -54,11 +62,14 @@ class DroneReportApp(QMainWindow):
         self.flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
         header_layout.addWidget(self.flight_time_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
+    
         # Dropdown to select previous flight runs
         self.run_selector = QComboBox()
         self.run_selector.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px;")
         self.run_selector.addItems(self.list_previous_runs())
         self.run_selector.currentTextChanged.connect(self.load_selected_run)
+    
+
         header_layout.addWidget(self.run_selector, alignment=Qt.AlignmentFlag.AlignLeft)
         
         # Close button to exit the application
@@ -170,7 +181,7 @@ class DroneReportApp(QMainWindow):
 
         # Button to play the flight video in an external player
         external_player_button = QPushButton("Αναπαραγωγή Καταγραφής Πτήσης")
-        external_player_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 5px;")
+        external_player_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         external_player_button.clicked.connect(self.open_video_in_external_player)
         main_layout.addWidget(external_player_button)
 
@@ -195,23 +206,26 @@ class DroneReportApp(QMainWindow):
         countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         countermeasures_button.clicked.connect(self.show_countermeasures)
         footer_layout.addWidget(countermeasures_button)
+        
+        
 
         main_layout.addLayout(footer_layout)
+        progress_button = QPushButton("View Field Health Progress")
+        progress_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
+        progress_button.clicked.connect(self.open_field_progress_page)
+        main_layout.addWidget(progress_button)
 
         
     def load_newest_flight_data(self):
-        # Load the newest flight data from the runs directory when the report generation window opens
-        runs_dir = "runs"  # Directory where flight data is stored
-        
-        # Check if the directory exists
-        if not os.path.exists(runs_dir):
-            print("No runs directory found.")
+        # Load the newest flight data from the runs directory
+        if not os.path.exists(self.runs_folder):
+            print(f"No runs directory found in {self.runs_folder}.")
             return
 
-        # List all flight folders sorted by timestamp (newest first)
+        # List all run folders sorted by timestamp (newest first)
         flight_folders = [
-            f for f in os.listdir(runs_dir)
-            if os.path.isdir(os.path.join(runs_dir, f)) and f.startswith("run_")
+            f for f in os.listdir(self.runs_folder)
+            if os.path.isdir(os.path.join(self.runs_folder, f)) and f.startswith("run_")
         ]
         if not flight_folders:
             print("No flight data found.")
@@ -219,13 +233,14 @@ class DroneReportApp(QMainWindow):
 
         # Select the newest flight folder
         flight_folders.sort(reverse=True)
-        newest_flight = os.path.join(runs_dir, flight_folders[0])
-        print(newest_flight)
-
-        # Load the results for the newest flight
+        newest_flight = os.path.join(self.runs_folder, flight_folders[0])
         print(f"Loading data from: {newest_flight}")
         self.load_results(newest_flight)
 
+
+    def open_field_progress_page(self):
+        self.progress_page = FieldProgressPage(self.field_path)
+        self.progress_page.show()
     
     def draw_chart(self, categories=None, values=None):
         # Greek disease name mapping from the file
@@ -549,73 +564,78 @@ class DroneReportApp(QMainWindow):
         self.update_carousel_image() # Update the displayed image
 
 
-    def list_previous_runs(self, base_folder="runs"):
-        # List all previous runs with formatted date and time (for the dropdown)
-        if not os.path.exists(base_folder):
-            print(f"No runs found in {base_folder}")
+    def list_previous_runs(self):
+        # List all previous runs in the runs folder
+        if not os.path.exists(self.runs_folder):
+            print(f"No runs found in {self.runs_folder}")
             return []
 
         # Get all run folders
         runs = [
-            f for f in os.listdir(base_folder)
-            if os.path.isdir(os.path.join(base_folder, f)) and f.startswith("run_")
+            f for f in os.listdir(self.runs_folder)
+            if os.path.isdir(os.path.join(self.runs_folder, f)) and f.startswith("run_")
         ]
 
         # Sort by timestamp (newest first)
         runs.sort(reverse=True)
 
-        # Format as "Πτήση: ημερομηνία ώρα"
-        formatted_runs = []
+        # Create a mapping of raw run names to formatted names
+        self.run_name_mapping = {}
         for run in runs:
             try:
-                # Extract the timestamp from the folder name (e.g., "run_20250109_101230")
+                # Extract the timestamp from the folder name
                 timestamp = run.split("_")[1]
                 time_part = run.split("_")[2]
                 flight_datetime = datetime.strptime(timestamp + time_part, "%Y%m%d%H%M%S")
-                formatted_runs.append(f"Πτήση: {flight_datetime.strftime('%d/%m/%Y %H:%M:%S')}")
+                formatted_name = f"Πτήση: {flight_datetime.strftime('%d/%m/%Y %H:%M:%S')}"
+                self.run_name_mapping[formatted_name] = run
             except (IndexError, ValueError):
                 print(f"Invalid folder name format: {run}")
                 continue
 
-        return formatted_runs
+        # Return only formatted names for display
+        return list(self.run_name_mapping.keys())
 
 
 
-    def load_selected_run(self, selected_run):
-        # Load and display the results from the selected run
-        base_folder = "runs"
 
-        # Extract date and time from the selected run (e.g., "Πτήση: 09/01/2025 10:12:30")
-        if not selected_run.startswith("Πτήση:"):
+
+    def load_selected_run(self):
+        # Get the selected run from the dropdown menu
+        selected_run = self.run_selector.currentText()
+        if not selected_run:
+            QMessageBox.warning(self, "No Run Selected", "Please select a run to load.")
             return
 
-        # Extract date and time from the selected run (e.g., "Πτήση: 09/01/2025 10:12:30")
-        selected_datetime = selected_run.split(": ")[1]
+        # Map the selected run to its corresponding folder
+        raw_run_name = self.run_name_mapping.get(selected_run, None)
+        if not raw_run_name:
+            QMessageBox.critical(
+                self, "Invalid Run", f"The selected run could not be mapped to a valid folder."
+            )
+            return
+
+        selected_run_folder = os.path.join(self.runs_folder, raw_run_name)
+        if not os.path.exists(selected_run_folder):
+            QMessageBox.critical(
+                self, "Invalid Run", f"The selected run folder does not exist: {selected_run_folder}"
+            )
+            return
+
+        # Load the results from the selected run
         try:
-            # Format the extracted datetime to match the folder naming convention (e.g., "20250109_101230")
-            formatted_datetime = datetime.strptime(selected_datetime, "%d/%m/%Y %H:%M:%S").strftime("%Y%m%d_%H%M%S")
-        except ValueError:
-            print(f"Invalid datetime format: {selected_datetime}")
-            return
+            self.load_results(selected_run_folder)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred while loading the run: {e}")
 
-        # Find folders in the base directory that match the formatted datetime
-        matching_folders = [
-            f for f in os.listdir(base_folder)
-            if f.startswith(f"run_{formatted_datetime}")
-        ]
-        # Check if any matching folder is found
-        if not matching_folders:
-            print(f"No matching folder found for datetime: {selected_datetime}")
-            return
 
-        # Load the results from the first matching folder
-        self.load_results(os.path.join(base_folder, matching_folders[0]))
 
-    
+        
     def show_fullscreen_image(self):
         # Display the current image in a zoomable window
         if not hasattr(self, 'photo_files') or not self.photo_files:
-            return
+                return
 
         # Get the current photo file
         photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])

@@ -11,12 +11,8 @@ from PyQt6.QtGui import QKeyEvent
 from report_gen import DroneReportApp
 from video_process import run
 import pygame
+from shared import open_homepage
 
-
-# Create a folder for saving flight data if it does not exist
-FLIGHTS_FOLDER = "flights"
-if not os.path.exists(FLIGHTS_FOLDER):
-    os.makedirs(FLIGHTS_FOLDER)
 
 # Mock class to simulate the behavior of a drone
 class MockTello:
@@ -122,12 +118,20 @@ class MockTello:
 
 # Main class for the Drone Control Application
 class DroneControlApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, field_path):
         super().__init__()
         self.setWindowTitle("Drone Control")  # Set the window title
         self.setGeometry(100, 100, 1200, 800)  # Set the window size
         self.control_buttons = {}  # Dictionary to store control buttons
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
+        # Store the field path
+        self.field_path = field_path
+        
+        # Ensure the `flights` folder exists within the field path
+        self.flights_folder = os.path.join(self.field_path, "flights")
+        os.makedirs(self.flights_folder, exist_ok=True)
+        
         # Initialize the Mock Drone
         self.drone = MockTello()
         self.drone.connect()
@@ -135,11 +139,14 @@ class DroneControlApp(QMainWindow):
         self.drone.is_flying = False  # Tracks if the drone is flying
         self.flight_duration = 0  # Tracks the flight duration
         self.battery_level = 100  # Battery level of the drone
-        self.height = 0  # Height of the drone
+        self.fly_height = 0  # Height of the drone
         self.speed = 0  # Speed of the drone
         self.current_flight_folder = None  # Folder to save flight data
         self.flight_timer = QTimer()  # Timer to update flight duration
         self.flight_timer.timeout.connect(self.update_flight_duration) 
+        
+        # Center the window on the screen
+        self.center_window()
 
         # Initialize the User Interface
         self.init_ui()
@@ -314,8 +321,26 @@ class DroneControlApp(QMainWindow):
         
         main_layout.addWidget(self.history_button)
         self.update_history_button()
+        # Add a Home Page button at the bottom
+        self.home_button = QPushButton("Αρχική Σελίδα")
+        self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
+        self.home_button.clicked.connect(self.go_to_homepage)
+        main_layout.addWidget(self.home_button, alignment=Qt.AlignmentFlag.AlignBottom)
+
         
         
+    def center_window(self):
+        """Centers the window on the screen."""
+        # Get the screen geometry
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        
+        # Calculate the center position
+        x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
+        y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
+
+        # Move the window to the calculated position
+        self.move(x, y)
+
 
 
     # Update the controller status and enable/disable controls accordingly
@@ -453,7 +478,7 @@ class DroneControlApp(QMainWindow):
     # Update UI stats dynamically
     def update_ui_stats(self):
         self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
-        self.height = random.randint(0, 500) if self.drone.is_flying else 0
+        self.fly_height = random.randint(0, 500) if self.drone.is_flying else 0
         self.speed = random.uniform(0, 10) if self.drone.is_flying else 0
 
         # Update battery progress bar
@@ -467,12 +492,14 @@ class DroneControlApp(QMainWindow):
             self.notification_label.setVisible(False)
 
         # Update other stats
-        self.info_labels["Height"].setText(f"{self.height} cm")
+        self.info_labels["Height"].setText(f"{self.fly_height} cm")
         self.info_labels["Speed"].setText(f"{self.speed:.2f} cm/s")
 
     # Take off action for the drone
     def take_off(self):
         self.history_button.setEnabled(False)
+        self.home_button.setEnabled(False)
+        self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
         if not self.drone.is_flying:
             self.drone.is_flying = True
             
@@ -480,8 +507,10 @@ class DroneControlApp(QMainWindow):
             self.flight_start_time = datetime.datetime.now()
             # Create flight folder
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.current_flight_folder = os.path.join(FLIGHTS_FOLDER, f"flight_{timestamp}")
+            self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
             os.makedirs(self.current_flight_folder, exist_ok=True)
+
+            print(f"Flight folder created: {self.current_flight_folder}")
 
             # Start video stream
             self.stream_label.setText("Stream On")
@@ -495,22 +524,24 @@ class DroneControlApp(QMainWindow):
             self.flight_timer.stop()
             self.stream_label.setText("Stream Off")
             self.drone.streamoff()
+            self.home_button.setEnabled(True)  # Re-enable the home button
+            self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
             print("Landing successful")
             
             self.flight_end_time = datetime.datetime.now()
             duration = self.flight_end_time - self.flight_start_time
-            QMessageBox.information(self, "Drone Status", f"Η πτήση ολοκληρώθηκε!\nΔιάρκεια: {duration}")
+            QMessageBox.information(self, "Flight Completed", f"Flight duration: {duration}")
+
+            print(f"Flight data saved in: {self.current_flight_folder}")
             # Process flight video
             self.process_flight_video(duration)
             self.update_history_button()
             
       
-    # Flight video processing by passing it through the run() method        
     def process_flight_video(self, duration):
         """Process the flight video using video_process.py."""
-        # Supported video formats
         video_formats = [".mp4", ".mov", ".avi"]
-        
+
         # Search for a video file in the flight folder
         video_path = None
         for fmt in video_formats:
@@ -522,35 +553,36 @@ class DroneControlApp(QMainWindow):
         if video_path:
             # Process the video using video_process.py
             try:
-                run(video_path, duration)
-                
-                
+                from video_process import run
+                run(video_path, duration, self.field_path)  # Pass the field path to the run function
             except Exception as e:
-                QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
+                QMessageBox.critical(self, "Processing Error", f"Error processing video: {e}")
         else:
-            # Show warning if no video is found
-            QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
+            QMessageBox.warning(self, "Video Missing", "No flight video found for processing!")
 
-    # Enable the history button if runs folder has content.
+
     def update_history_button(self):
-        
-        runs_dir = "runs"
+        runs_dir = os.path.join(self.field_path, "runs")
         if os.path.exists(runs_dir) and os.listdir(runs_dir):
             self.history_button.setEnabled(True)
         else:
             self.history_button.setEnabled(False)
 
+    def go_to_homepage(self):
+        self.home_page = open_homepage()
+        self.home_page.show()
+        self.close()
    
-    # Launch report generation app
     def view_flight_history(self):
-        
-        self.report_app = DroneReportApp()
+        # Launch the DroneReportApp with the current field path
+        self.report_app = DroneReportApp(self.field_path)
         self.report_app.show()
+
         
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = DroneControlApp()
-    window.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     window = DroneControlApp()
+#     window.show()
+#     sys.exit(app.exec())
