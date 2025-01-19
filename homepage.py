@@ -19,10 +19,9 @@ class HomePage(QMainWindow):
         self.setWindowTitle("AgroDrone - Home")
         self.setGeometry(200, 200, 600, 500)
         self.init_ui()
-        # Center the window on the screen
         self.center_window()
         self.setFixedSize(600, 500)  # Set fixed width and height
-
+        
     def init_ui(self):
         # Main widget and layout
         main_widget = QWidget()
@@ -153,7 +152,8 @@ class HomePage(QMainWindow):
 
         # Initialize button states
         self.update_view_history_button()
-
+        
+        
     def center_window(self):
         """Centers the window on the screen."""
         screen = self.screen().availableGeometry()  # Get available screen geometry
@@ -169,14 +169,30 @@ class HomePage(QMainWindow):
         return sorted(os.listdir(FIELDS_FOLDER))
 
     def update_view_history_button(self):
+        """Enable or disable the 'View Flight History' button based on folder contents."""
         selected_field = self.field_selector.currentText()
         if not selected_field:
             self.history_button.setEnabled(False)
             return
 
+        # Path to the selected field
         field_path = os.path.join(FIELDS_FOLDER, selected_field)
-        # Enable the button only if the folder contains files
-        self.history_button.setEnabled(bool(os.listdir(field_path)))
+
+        # Check if the field folder exists
+        if not os.path.exists(field_path):
+            self.history_button.setEnabled(False)
+            return
+
+        # Check if 'runs' and 'flights' subfolders exist and are not empty
+        runs_path = os.path.join(field_path, "runs")
+        flights_path = os.path.join(field_path, "flights")
+
+        runs_has_content = os.path.exists(runs_path) and any(os.listdir(runs_path))
+        flights_has_content = os.path.exists(flights_path) and any(os.listdir(flights_path))
+
+        # Enable the button only if either 'runs' or 'flights' contains content
+        self.history_button.setEnabled(runs_has_content or flights_has_content)
+
 
     def proceed_to_drone_control(self):
         selected_field = self.field_selector.currentText()
@@ -227,6 +243,8 @@ class HomePage(QMainWindow):
         QMessageBox.information(self, "Success", f"Field '{new_field}' created successfully!")
         self.new_field_input.clear()
         self.update_view_history_button()
+        
+    
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ from countermeasures import CounterMeasuresWindow
 from PyQt6.QtGui import QPainter, QFont
 from PyQt6.QtPrintSupport import QPrinter
 from field_progress import FieldProgressPage
+import platform
+import subprocess
 
 
 
@@ -31,7 +33,7 @@ class DroneReportApp(QMainWindow):
         # Initialize the main application window
         super().__init__()
         self.setWindowTitle("Drone Flight Report")
-        self.setGeometry(100, 50, 1200, 800)
+        self.setGeometry(100, 0, 1200, 800)
         
         # Store the field path
         self.field_path = field_path
@@ -53,6 +55,8 @@ class DroneReportApp(QMainWindow):
 
         # Load the newest flight data
         self.load_newest_flight_data()
+        
+    
 
     def setup_ui(self, main_layout): # Create the UI layout for the application
         
@@ -185,6 +189,11 @@ class DroneReportApp(QMainWindow):
         external_player_button.clicked.connect(self.open_video_in_external_player)
         main_layout.addWidget(external_player_button)
 
+        # Button to open photos folder
+        photos_button = QPushButton("Άνοιγμα Φακέλου Φωτογραφιών", self)
+        photos_button.setStyleSheet("font-size: 14px; background-color: #007BFF; color: white; padding: 10px;")
+        photos_button.clicked.connect(self.open_photos_folder)
+        main_layout.addWidget(photos_button)
         
         # Footer section: contains additional actions and flight duration
         footer_layout = QHBoxLayout()
@@ -214,6 +223,9 @@ class DroneReportApp(QMainWindow):
         progress_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         progress_button.clicked.connect(self.open_field_progress_page)
         main_layout.addWidget(progress_button)
+        
+        
+
 
         
     def load_newest_flight_data(self):
@@ -236,6 +248,40 @@ class DroneReportApp(QMainWindow):
         newest_flight = os.path.join(self.runs_folder, flight_folders[0])
         print(f"Loading data from: {newest_flight}")
         self.load_results(newest_flight)
+    
+    def open_photos_folder(self):
+        """Open the photos folder for the currently selected flight."""
+        # Get the selected run from the dropdown menu
+        selected_run = self.run_selector.currentText()
+        if not selected_run:
+            QMessageBox.warning(self, "Σφάλμα", "Παρακαλώ επιλέξτε πτήση.")
+            return
+
+        # Map the selected run to its corresponding folder name
+        raw_run_name = self.run_name_mapping.get(selected_run)
+        if not raw_run_name:
+            QMessageBox.warning(self, "Σφάλμα", "Η επιλεγμένη πτήση δεν μπορεί να εντοπιστεί.")
+            return
+
+        # Path to the photos folder
+        photos_folder = os.path.join(self.field_path, "runs", raw_run_name, "photos")
+        if not os.path.exists(photos_folder):
+            QMessageBox.warning(self, "Σφάλμα", "Δεν βρέθηκε φάκελος φωτογραφιών για την επιλεγμένη πτήση.")
+            return
+
+        # Open the folder using platform-specific commands
+        try:
+            if platform.system() == "Windows":
+                os.startfile(photos_folder)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", photos_folder])
+            elif platform.system() == "Linux":
+                subprocess.run(["xdg-open", photos_folder])
+            else:
+                QMessageBox.warning(self, "Σφάλμα", "Δεν υποστηρίζεται το λειτουργικό σύστημα.")
+        except Exception as e:
+            QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία ανοίγματος φακέλου: {e}")
+
 
 
     def open_field_progress_page(self):
@@ -322,8 +368,6 @@ class DroneReportApp(QMainWindow):
         self.plants_analyzed_label.setText(f"Φύλλα που αναλύθηκαν: {plants_analyzed}")
         self.affected_plants_label.setText(f"Επηρεασμένα φύλλα: {affected_plants}")
 
-
-    
 
     
 
