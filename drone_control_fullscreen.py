@@ -11,9 +11,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPolygon
 from PyQt6.QtCore import QPoint
 from video_process import run
 
-FLIGHTS_FOLDER = "flights"
-if not os.path.exists(FLIGHTS_FOLDER):
-    os.makedirs(FLIGHTS_FOLDER)
+
 
 # # Setup logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,7 +28,7 @@ class VideoThread(QThread):
     def __init__(self):
         super().__init__()
         try:
-            self.capture = cv2.VideoCapture(0)  # Open the default webcam
+            self.capture = cv2.VideoCapture(1)  # Open the default webcam
             if not self.capture.isOpened():
                 logging.critical("Failed to open webcam.")
                 raise Exception("Webcam not accessible.")
@@ -165,6 +163,10 @@ class DroneOperatingPage(QWidget):
         self.button_states = {}  # Track button states to handle single presses
         self.speed = 0  # Speed of the drone
         self.current_flight_folder = None  # Folder to save flight data
+        self.field_path = field_path  # Save the field path
+        self.flights_folder = os.path.join(self.field_path, "flights")  # Path to flights folder
+        os.makedirs(self.flights_folder, exist_ok=True)  # Ensure the flights folder exists
+        
         self.flight_timer = QTimer()  # Timer to update flight duration
         self.flight_timer.timeout.connect(self.update_flight_duration)
         
@@ -354,7 +356,7 @@ class DroneOperatingPage(QWidget):
 
         # Create flight folder
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.current_flight_folder = os.path.join(FLIGHTS_FOLDER, f"flight_{timestamp}")
+        self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
         os.makedirs(self.current_flight_folder, exist_ok=True)
 
         # Start video stream
@@ -394,11 +396,24 @@ class DroneOperatingPage(QWidget):
       
     # Flight video processing by passing it through the run() method        
     def process_flight_video(self, duration):
-        """Process the flight video using video_process.py."""
+        """Process the flight video using video_process.py and save results in the `runs` folder."""
+        if not self.current_flight_folder:
+            QMessageBox.warning(self, "Error", "Flight folder not set. Cannot process video.")
+            return
+
+        # Ensure the `runs` folder exists within the field path
+        runs_folder = os.path.join(self.field_path, "runs")
+        os.makedirs(runs_folder, exist_ok=True)
+
+        # Generate a run folder based on the current timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_folder = os.path.join(runs_folder, f"run_{timestamp}")
+        os.makedirs(run_folder, exist_ok=True)
+
         # Supported video formats
         video_formats = [".mp4", ".mov", ".avi"]
-        
-        # Search for a video file in the flight folder
+
+        # Search for a video file in the current flight folder
         video_path = None
         for fmt in video_formats:
             potential_path = os.path.join(self.current_flight_folder, f"flight_video{fmt}")
@@ -407,15 +422,20 @@ class DroneOperatingPage(QWidget):
                 break
 
         if video_path:
-            # Process the video using video_process.py
             try:
-                run(video_path, duration)
-                self.update_history_button()
+                # Call the `run` function with the correct paths
+                run(video_path, duration, self.field_path)
+
+                QMessageBox.information(
+                    self,
+                    "Video Processing",
+                    f"Η επεξεργασία του βίντεο ολοκληρώθηκε επιτυχώς!\nΑποτελέσματα αποθηκεύτηκαν στον φάκελο:\n{run_folder}"
+                )
             except Exception as e:
                 QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
         else:
-            # Show warning if no video is found
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
+
     
     def update_video_frame(self, frame):
         """Update the QLabel with the new video frame."""
