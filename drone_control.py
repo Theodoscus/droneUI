@@ -178,8 +178,8 @@ class DroneControlApp(QMainWindow):
             Qt.Key.Key_D: self.drone.move_right,
             Qt.Key.Key_Q: self.drone.flip_left,
             Qt.Key.Key_E: self.drone.flip_right,
-            Qt.Key.Key_Return: lambda: self.take_off(),  # Takeoff and trigger related action
-            Qt.Key.Key_P: self.land(),         # Land and trigger related action
+            Qt.Key.Key_Return: self.take_off,  # Takeoff and trigger related action
+            Qt.Key.Key_P: self.land,         # Land and trigger related action
             Qt.Key.Key_Up: self.drone.move_up,
             Qt.Key.Key_Down: self.drone.move_down,
             Qt.Key.Key_Left: self.drone.rotate_left,
@@ -332,7 +332,7 @@ class DroneControlApp(QMainWindow):
         
         # Add Fullscreen Button
         self.fullscreen_button = QPushButton("Full Screen Drone Operation")
-        self.fullscreen_button.setStyleSheet("font-size: 14px; padding: 10px; background-color: blue; color: white;")
+        self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.fullscreen_button.setEnabled(True)  # Initially enabled as the drone is landed
         self.fullscreen_button.clicked.connect(self.launch_fullscreen)
         main_layout.addWidget(self.fullscreen_button)
@@ -348,6 +348,10 @@ class DroneControlApp(QMainWindow):
         self.flight_timer.stop()
         self.ui_timer.stop()
         self.controller_timer.stop()
+        
+        # Quit pygame to release resources
+        pygame.joystick.quit()
+        pygame.quit()
         
         self.fullscreen_window = open_full_screen(self.field_path)
         self.fullscreen_window.show()
@@ -426,6 +430,7 @@ class DroneControlApp(QMainWindow):
     def handle_button_press(self, button):
         """Map controller buttons to drone actions."""
         if button == 0:  # Example: Button A
+            print("here")
             self.take_off()
         elif button == 1:  # Example: Button B
             self.land()
@@ -517,7 +522,7 @@ class DroneControlApp(QMainWindow):
         self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
         self.fly_height = random.randint(0, 500) if self.drone.is_flying else 0
         self.speed = random.uniform(0, 10) if self.drone.is_flying else 0
-        self.debug_active_threads()
+        # self.debug_active_threads()
         # Update battery progress bar
         self.battery_bar.setValue(self.battery_level)
 
@@ -536,8 +541,10 @@ class DroneControlApp(QMainWindow):
     def take_off(self):
         self.history_button.setEnabled(False)
         self.home_button.setEnabled(False)
+        self.fullscreen_button.setEnabled(False)
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
-        print("here!!!!!!")
+        self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
+        
         if not self.drone.is_flying:
             self.drone.is_flying = True
             
@@ -563,7 +570,9 @@ class DroneControlApp(QMainWindow):
             self.stream_label.setText("Stream Off")
             self.drone.streamoff()
             self.home_button.setEnabled(True)  # Re-enable the home button
+            self.fullscreen_button.setEnabled(True)
             self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
+            self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
             print("Landing successful")
             
             self.flight_end_time = datetime.datetime.now()
@@ -607,6 +616,11 @@ class DroneControlApp(QMainWindow):
             self.history_button.setEnabled(False)
 
     def go_to_homepage(self):
+        # Stop any active timers
+        self.flight_timer.stop()
+        self.ui_timer.stop()
+        self.controller_timer.stop()
+        
         self.home_page = open_homepage()
         self.home_page.show()
         self.close()

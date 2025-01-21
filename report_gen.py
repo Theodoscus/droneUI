@@ -211,10 +211,10 @@ class DroneReportApp(QMainWindow):
         footer_layout.addWidget(self.flight_duration_label)
         
         # Button for countermeasures or additional actions
-        countermeasures_button = QPushButton("Τρόποι αντιμετώπισης")
-        countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
-        countermeasures_button.clicked.connect(self.show_countermeasures)
-        footer_layout.addWidget(countermeasures_button)
+        self.countermeasures_button = QPushButton("Τρόποι αντιμετώπισης")
+        self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
+        self.countermeasures_button.clicked.connect(self.show_countermeasures)
+        footer_layout.addWidget(self.countermeasures_button)
         
         
 
@@ -367,6 +367,14 @@ class DroneReportApp(QMainWindow):
         self.disease_count_label.setText(f"Ασθένειες που εντοπίστηκαν: {diseases}")
         self.plants_analyzed_label.setText(f"Φύλλα που αναλύθηκαν: {plants_analyzed}")
         self.affected_plants_label.setText(f"Επηρεασμένα φύλλα: {affected_plants}")
+        
+        # Enable or disable the countermeasures button based on the number of diseases detected
+        if diseases == 0:
+            self.countermeasures_button.setEnabled(False)
+            self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #e0e0e0; color: gray; padding: 10px;")
+        else:
+            self.countermeasures_button.setEnabled(True)
+            self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
 
 
     

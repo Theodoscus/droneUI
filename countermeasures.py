@@ -5,7 +5,7 @@ class CounterMeasuresWindow(QDialog):
     def __init__(self, diseases, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Τρόποι Αντιμετώπισης για Ανιχνευμένες Ασθένειες")
-        self.setGeometry(200, 200, 800, 600)
+        
 
         # Set up the main layout
         layout = QVBoxLayout(self)

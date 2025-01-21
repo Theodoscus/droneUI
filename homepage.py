@@ -31,7 +31,7 @@ class HomePage(QMainWindow):
 
         # Set background color
         palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#f5f5f5"))
+        palette.setColor(QPalette.ColorRole.Window, QColor("#ECECEA"))
         self.setPalette(palette)
 
         # Title Section
@@ -45,7 +45,7 @@ class HomePage(QMainWindow):
         # Space for logo
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_pixmap = QPixmap("logo.png")  # Replace with your logo path
+        logo_pixmap = QPixmap("logo.webp")  # Replace with your logo path
         if not logo_pixmap.isNull():
             logo_label.setPixmap(logo_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))
         else:
@@ -177,21 +177,25 @@ class HomePage(QMainWindow):
 
         # Path to the selected field
         field_path = os.path.join(FIELDS_FOLDER, selected_field)
-
+        
         # Check if the field folder exists
         if not os.path.exists(field_path):
             self.history_button.setEnabled(False)
             return
 
-        # Check if 'runs' and 'flights' subfolders exist and are not empty
+        # Paths for required subfolders and database file
         runs_path = os.path.join(field_path, "runs")
         flights_path = os.path.join(field_path, "flights")
+        flight_data_db = os.path.join(field_path, "field_data.db")
 
+        # Check conditions: runs and flights folders exist and have content, and flight_data.db exists
         runs_has_content = os.path.exists(runs_path) and any(os.listdir(runs_path))
         flights_has_content = os.path.exists(flights_path) and any(os.listdir(flights_path))
+        db_exists = os.path.exists(flight_data_db)
 
-        # Enable the button only if either 'runs' or 'flights' contains content
-        self.history_button.setEnabled(runs_has_content or flights_has_content)
+        # Enable the button only if all conditions are met
+        self.history_button.setEnabled(runs_has_content and flights_has_content and db_exists)
+
 
 
     def proceed_to_drone_control(self):

@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPolygon
 from PyQt6.QtCore import QPoint
 from video_process import run
+from shared import open_drone_control
 
 
 
@@ -22,43 +23,43 @@ def log_uncaught_exceptions(exctype, value, traceback):
 
 sys.excepthook = log_uncaught_exceptions
 
-class VideoThread(QThread):
-    frame_updated = pyqtSignal(QImage)
+# class VideoThread(QThread):
+#     frame_updated = pyqtSignal(QImage)
 
-    def __init__(self):
-        super().__init__()
-        try:
-            self.capture = cv2.VideoCapture(1)  # Open the default webcam
-            if not self.capture.isOpened():
-                logging.critical("Failed to open webcam.")
-                raise Exception("Webcam not accessible.")
-            self.running = True
-        except Exception as e:
-            logging.error(f"Error initializing VideoThread: {e}")
+#     def __init__(self):
+#         super().__init__()
+#         try:
+#             self.capture = cv2.VideoCapture(1)  # Open the default webcam
+#             if not self.capture.isOpened():
+#                 logging.critical("Failed to open webcam.")
+#                 raise Exception("Webcam not accessible.")
+#             self.running = True
+#         except Exception as e:
+#             logging.error(f"Error initializing VideoThread: {e}")
 
-    def run(self):
-        while self.running:
-            try:
-                ret, frame = self.capture.read()
-                if ret:
-                    # Convert frame to RGB and then to QImage
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    height, width, channel = frame.shape
-                    bytes_per_line = channel * width
-                    qt_image = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-                    self.frame_updated.emit(qt_image)
-                else:
-                    logging.warning("Failed to read frame from webcam.")
-            except Exception as e:
-                logging.error(f"Error in VideoThread run: {e}")
+#     def run(self):
+#         while self.running:
+#             try:
+#                 ret, frame = self.capture.read()
+#                 if ret:
+#                     # Convert frame to RGB and then to QImage
+#                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#                     height, width, channel = frame.shape
+#                     bytes_per_line = channel * width
+#                     qt_image = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+#                     self.frame_updated.emit(qt_image)
+#                 else:
+#                     logging.warning("Failed to read frame from webcam.")
+#             except Exception as e:
+#                 logging.error(f"Error in VideoThread run: {e}")
 
-    def stop(self):
-        try:
-            self.running = False
-            self.capture.release()
-            self.quit()
-        except Exception as e:
-            logging.error(f"Error stopping VideoThread: {e}")
+#     def stop(self):
+#         try:
+#             self.running = False
+#             self.capture.release()
+#             self.quit()
+#         except Exception as e:
+#             logging.error(f"Error stopping VideoThread: {e}")
             
 # Mock class to simulate the behavior of a drone
 class MockPTello:
@@ -226,10 +227,16 @@ class DroneOperatingPage(QWidget):
             self.emergency_button.clicked.connect(self.emergency_landing)
 
             # Close Button
-            self.close_button = QPushButton("CLOSE", self)
-            self.close_button.setGeometry(self.width() - 110, 10, 100, 50)
-            self.close_button.setStyleSheet("background-color: gray; color: white; font-size: 16px; font-weight: bold;")
-            self.close_button.clicked.connect(self.close_application)
+            self.close_button = QPushButton("Λειτουργία Παραθύρου", self)
+            self.close_button.setStyleSheet("background-color: blue; color: white; font-size: 16px; font-weight: bold;")
+            self.close_button.clicked.connect(self.launch_windowed)
+
+            # Adjust size to fit the contents dynamically
+            self.close_button.adjustSize()
+
+            # Optionally position the button after adjusting its size
+            button_width = self.close_button.width()
+            self.close_button.setGeometry(self.width() - button_width - 10, 10, 200, 50)
 
         
 
@@ -300,18 +307,37 @@ class DroneOperatingPage(QWidget):
             self.drone_state_label = QLabel("Landed", self)
             self.drone_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.drone_state_label.setStyleSheet("background-color: rgba(200, 200, 200, 0.7); color: black; font-size: 18px; font-weight: bold; padding: 5px;")
-            self.drone_state_label.adjustSize()
-            self.drone_state_label.move(self.width() // 2 - self.drone_state_label.width() // 2, self.height() - 100)
 
-            
+            # Place the label where it was originally intended
+            self.drone_state_label.move(self.width() // 2 - 50, self.height() - 100)  # Example fixed position
+            self.drone_state_label.adjustSize()  # Adjust size to fit the contents dynamically
 
             # Start the video thread
-            self.video_thread = VideoThread()
-            self.video_thread.frame_updated.connect(self.update_video_frame)
-            self.video_thread.start()
+            # self.video_thread = VideoThread()
+            # self.video_thread.frame_updated.connect(self.update_video_frame)
+            # self.video_thread.start()
         except Exception as e:
             logging.error(f"Error initializing DroneOperatingPage: {e}")
 
+    def launch_windowed(self):
+        """Launch the fullscreen drone operation page."""
+        # Stop any active timers
+        self.flight_timer.stop()
+        self.ui_timer.stop()
+        self.timer.stop()
+        
+        # Stop the video thread
+        # if hasattr(self, 'video_thread') and self.video_thread.isRunning():
+        #     self.video_thread.stop()
+        
+        # Quit pygame to release resources
+        pygame.joystick.quit()
+        pygame.quit()
+        
+        self.fullscreen_window = open_drone_control(self.field_path)
+        self.fullscreen_window.show()
+        self.close()  # Close the current window
+    
     # Update the flight duration
     def update_flight_duration(self):
         self.flight_duration += 1
@@ -342,13 +368,18 @@ class DroneOperatingPage(QWidget):
         # Check if the drone is already flying
         if not self.drone.is_flying:
             self.drone_state_label.setText("Taking Off...")
+            self.drone_state_label.adjustSize()  # Resize the label dynamically
+            self.close_button.setEnabled(False)
+            self.close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
             
             # Delay the following actions by 5 seconds
             QTimer.singleShot(5000, lambda: self._perform_take_off())
 
     def _perform_take_off(self):
+        
         """Perform the actual takeoff actions after the delay."""
         self.drone_state_label.setText("On Air.")
+        self.drone_state_label.adjustSize()  # Resize the label dynamically
         self.drone.is_flying = True
         
         self.flight_timer.start(1000)
@@ -367,13 +398,17 @@ class DroneOperatingPage(QWidget):
     def land(self):
         if self.drone.is_flying:
             self.drone_state_label.setText("Landing...")
-
+            self.drone_state_label.adjustSize()  # Resize the label dynamically
+            self.close_button.setEnabled(True)
+            self.close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
             # Delay the following actions by 5 seconds
             QTimer.singleShot(5000, lambda: self._perform_landing())
 
     def _perform_landing(self):
+        print("check check")
         """Perform the actual landing actions after the delay."""
         self.drone_state_label.setText("Landed.")
+        self.drone_state_label.adjustSize()  # Resize the label dynamically
         self.drone.is_flying = False
         self.flight_timer.stop()
         self.stream_label.setText("Stream Off")
