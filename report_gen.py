@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
+    QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QScrollArea
 )
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -33,7 +33,7 @@ class DroneReportApp(QMainWindow):
         # Initialize the main application window
         super().__init__()
         self.setWindowTitle("Drone Flight Report")
-        self.setGeometry(100, 0, 1200, 800)
+        self.setGeometry(100, 100, 1200, 800)
         
         # Store the field path
         self.field_path = field_path
@@ -42,16 +42,21 @@ class DroneReportApp(QMainWindow):
         self.runs_folder = os.path.join(self.field_path, "runs")
         os.makedirs(self.runs_folder, exist_ok=True)  # Ensure the runs folder exists
 
-        # Set up the main widget and layout
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        
-        # Load UI components
-        self.setup_ui(main_layout)
+        # Scrollable area setup
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
 
-        # Set layout to the main widget
-        main_widget.setLayout(main_layout)
+        # Scrollable content
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout()
+        scroll_content.setLayout(scroll_layout)
+        scroll_area.setWidget(scroll_content)
+
+        # Set up the main widget and layout
+        self.setCentralWidget(scroll_area)
+
+        # Load UI components into the scrollable layout
+        self.setup_ui(scroll_layout)
 
         # Load the newest flight data
         self.load_newest_flight_data()
@@ -60,23 +65,18 @@ class DroneReportApp(QMainWindow):
 
     def setup_ui(self, main_layout): # Create the UI layout for the application
         
-        # Header section: displays flight information and controls
+        # Header section
         header_layout = QHBoxLayout()
         self.flight_time_label = QLabel("ΠΤΗΣΗ: ")
         self.flight_time_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
         header_layout.addWidget(self.flight_time_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
-    
-        # Dropdown to select previous flight runs
         self.run_selector = QComboBox()
         self.run_selector.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px;")
         self.run_selector.addItems(self.list_previous_runs())
         self.run_selector.currentTextChanged.connect(self.load_selected_run)
-    
-
         header_layout.addWidget(self.run_selector, alignment=Qt.AlignmentFlag.AlignLeft)
-        
-        # Close button to exit the application
+
         close_button = QPushButton("Κλείσιμο")
         close_button.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px 10px;")
         close_button.clicked.connect(self.close)

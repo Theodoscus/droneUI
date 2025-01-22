@@ -188,8 +188,11 @@ class DroneControlApp(QMainWindow):
             Qt.Key.Key_Right: self.drone.rotate_right,
         }
 
-    # Initialize the User Interface
+    
+
+
     def init_ui(self):
+        # Main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
@@ -203,52 +206,42 @@ class DroneControlApp(QMainWindow):
         self.connection_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.connection_status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(self.connection_status)
-        
 
-        # Content layout
-        content_layout = QHBoxLayout()
-        main_layout.addLayout(content_layout)
-        
-        # Low battery warning label
+        # Notification label
         self.notification_label = QLabel("")
         self.notification_label.setStyleSheet("color: red; font-size: 16px; font-weight: bold;")
         self.notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.notification_label.setVisible(False)  # Hidden by default
+        self.notification_label.setVisible(False)  # Initially hidden
         main_layout.addWidget(self.notification_label)
 
+        # Content layout with left panel and stream label
+        content_layout = QHBoxLayout()
+        main_layout.addLayout(content_layout)
 
         # Left panel layout for drone stats and controls
         left_panel = QVBoxLayout()
-        
 
         # Battery Group Box
         battery_box = QGroupBox("Battery")
         battery_layout = QVBoxLayout()
-
         self.battery_bar = QProgressBar()
         self.battery_bar.setValue(self.battery_level)
-        self.battery_bar.setStyleSheet(
-            "QProgressBar::chunk { background-color: green; }"
-        )
+        self.battery_bar.setStyleSheet("QProgressBar::chunk { background-color: green; }")
         self.battery_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
         battery_layout.addWidget(self.battery_bar)
         battery_box.setLayout(battery_layout)
-        battery_box.setFixedHeight(60)  # Set fixed height to make it compact
+        battery_box.setFixedHeight(60)  # Fix the height of the battery box
         left_panel.addWidget(battery_box)
 
         # Controller Status Box
         controller_status_box = QGroupBox("Controller Status")
         controller_layout = QVBoxLayout()
-
         self.controller_status_label = QLabel("No Controller Connected")
         self.controller_status_label.setStyleSheet("color: red; font-size: 14px; font-weight: bold;")
         controller_layout.addWidget(self.controller_status_label)
-
         controller_status_box.setLayout(controller_layout)
-        self.controller_status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        controller_status_box.setFixedHeight(60)  # Fix the height of the controller status box
         left_panel.addWidget(controller_status_box)
-
 
         # Drone information group box
         info_box = QGroupBox("Drone Info")
@@ -266,12 +259,14 @@ class DroneControlApp(QMainWindow):
             row.addWidget(label)
             info_layout.addLayout(row)
         info_box.setLayout(info_layout)
-        left_panel.addWidget(info_box)
+        info_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)  # Info box height adjusts dynamically
+        left_panel.addWidget(info_box, stretch=1)  # Stretch ensures the info box grows to fill remaining space
 
         # Add the left panel to the content layout
         left_panel_widget = QWidget()
         left_panel_widget.setLayout(left_panel)
         left_panel_widget.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        left_panel_widget.setMaximumWidth(300)  # Limit the maximum width of the left panel
         content_layout.addWidget(left_panel_widget, stretch=1)  # 1/4 width
 
         # Center panel for live stream
@@ -281,106 +276,85 @@ class DroneControlApp(QMainWindow):
         self.stream_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         content_layout.addWidget(self.stream_label, stretch=3)  # 3/4 width
 
-        # Drone control buttons layout
+        # Footer with controls and buttons
         controls_layout = QVBoxLayout()
 
-        # Row 1: Top Movement Controls
-        top_controls_layout = QHBoxLayout()
-        top_controls_layout.setSpacing(5)  # Reduce spacing between buttons
-        top_controls_layout.addWidget(self.create_control_button("Q", "Flip Left"))
-        top_controls_layout.addWidget(self.create_control_button("W", "Forward"))
-        top_controls_layout.addWidget(self.create_control_button("E", "Flip Right"))
-        top_controls_layout.addWidget(self.create_control_button("R", "Flip Forward"))
-        
-        controls_layout.addLayout(top_controls_layout)
-
-        # Row 2: Middle Movement Controls
-        middle_controls_layout = QHBoxLayout()
-        middle_controls_layout.setSpacing(5)  # Reduce spacing between buttons
-        middle_controls_layout.addWidget(self.create_control_button("A", "Left"))
-        middle_controls_layout.addWidget(self.create_control_button("S", "Backward"))
-        middle_controls_layout.addWidget(self.create_control_button("D", "Right"))
-        middle_controls_layout.addWidget(self.create_control_button("F", "Flip Back"))
-        controls_layout.addLayout(middle_controls_layout)
-
-        # Row 3: Action Controls
-        action_controls_layout = QHBoxLayout()
-        action_controls_layout.setSpacing(5)  # Reduce spacing between buttons
-        action_controls_layout.addWidget(self.create_control_button("Enter", "Take Off", "green"))
-        action_controls_layout.addWidget(self.create_control_button("Space", "Land", "red"))
-        controls_layout.addLayout(action_controls_layout)
-
-        # Row 4: Directional Controls
-        directional_controls_layout = QHBoxLayout()
-        directional_controls_layout.setSpacing(5)  # Reduce spacing between buttons
-        directional_controls_layout.addWidget(self.create_control_button("Up Arrow", "Up"))
-        directional_controls_layout.addWidget(self.create_control_button("Down Arrow", "Down"))
-        directional_controls_layout.addWidget(self.create_control_button("Left Arrow", "Rotate Left"))
-        directional_controls_layout.addWidget(self.create_control_button("Right Arrow", "Rotate Right"))
-        controls_layout.addLayout(directional_controls_layout)
+        # Add control buttons
+        control_buttons = [
+            [("Q", "Flip Left"), ("W", "Forward"), ("E", "Flip Right"), ("R", "Flip Forward")],
+            [("A", "Left"), ("S", "Backward"), ("D", "Right"), ("F", "Flip Back")],
+            [("Enter", "Take Off", "green"), ("Space", "Land", "red")],
+            [("Up Arrow", "Up"), ("Down Arrow", "Down"), ("Left Arrow", "Rotate Left"), ("Right Arrow", "Rotate Right")],
+        ]
+        for row in control_buttons:
+            row_layout = QHBoxLayout()
+            for button in row:
+                if len(button) == 3:
+                    btn = self.create_control_button(button[0], button[1], button[2])
+                else:
+                    btn = self.create_control_button(button[0], button[1])
+                row_layout.addWidget(btn)
+            controls_layout.addLayout(row_layout)
 
         main_layout.addLayout(controls_layout)
 
-
-
-
-        # View Flight History Button
+        # Footer buttons
         self.history_button = QPushButton("View Flight History")
-        
         self.history_button.setStyleSheet("font-size: 14px; padding: 10px;")
         self.history_button.clicked.connect(self.view_flight_history)
-        
         main_layout.addWidget(self.history_button)
-        self.update_history_button()
-        # Add a Home Page button at the bottom
+
         self.home_button = QPushButton("Αρχική Σελίδα")
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.home_button.clicked.connect(self.go_to_homepage)
         main_layout.addWidget(self.home_button)
-        
-        # Add Fullscreen Button
+
         self.fullscreen_button = QPushButton("Full Screen Drone Operation")
         self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
-        self.fullscreen_button.setEnabled(True)  # Initially enabled as the drone is landed
+        self.fullscreen_button.setEnabled(True)
         self.fullscreen_button.clicked.connect(self.launch_fullscreen)
         main_layout.addWidget(self.fullscreen_button)
-        
+
+
+
+
+            
     def debug_active_threads(self):
-        print("Active threads:")
-        for thread in threading.enumerate():
-            print(thread.name)
+            print("Active threads:")
+            for thread in threading.enumerate():
+                print(thread.name)
 
     def launch_fullscreen(self):
-        """Launch the fullscreen drone operation page."""
-        # Stop any active timers
-        self.flight_timer.stop()
-        self.ui_timer.stop()
-        self.controller_timer.stop()
-        
-        # Quit pygame to release resources
-        pygame.joystick.quit()
-        pygame.quit()
-        
-        self.fullscreen_window = open_full_screen(self.field_path)
-        self.fullscreen_window.show()
-        self.close()  # Close the current window     
-        
-        
+            """Launch the fullscreen drone operation page."""
+            # Stop any active timers
+            self.flight_timer.stop()
+            self.ui_timer.stop()
+            self.controller_timer.stop()
+            
+            # Quit pygame to release resources
+            pygame.joystick.quit()
+            pygame.quit()
+            
+            self.fullscreen_window = open_full_screen(self.field_path)
+            self.fullscreen_window.show()
+            self.close()  # Close the current window     
+            
+            
     def center_window(self):
-        """Centers the window on the screen."""
-        # Ensure the window is fully initialized and has its size calculated
-        self.show()  # Make sure the window is rendered before positioning
-        self.updateGeometry()  # Update the window's geometry
+            """Centers the window on the screen."""
+            # Ensure the window is fully initialized and has its size calculated
+            self.show()  # Make sure the window is rendered before positioning
+            self.updateGeometry()  # Update the window's geometry
 
-        # Get the available geometry of the primary screen
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
+            # Get the available geometry of the primary screen
+            screen_geometry = QApplication.primaryScreen().availableGeometry()
 
-        # Calculate the center position
-        center_x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
-        center_y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
+            # Calculate the center position
+            center_x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
+            center_y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
 
-        # Move the window to the calculated position
-        self.move(center_x, center_y)
+            # Move the window to the calculated position
+            self.move(center_x, center_y)
 
 
 
