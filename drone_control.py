@@ -4,7 +4,7 @@ import datetime
 import random
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QMessageBox, QGroupBox
+    QPushButton, QProgressBar, QMessageBox, QGroupBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeyEvent
@@ -122,9 +122,11 @@ class DroneControlApp(QMainWindow):
     def __init__(self, field_path):
         super().__init__()
         self.setWindowTitle("Drone Control")  # Set the window title
-        self.setGeometry(100,100,1200,800)
+        # self.setWindowState(Qt.WindowState.WindowFullScreen)
+
+        # self.setGeometry(100,100,600,200)
         self.control_buttons = {}  # Dictionary to store control buttons
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        # self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         # Store the field path
         self.field_path = field_path
@@ -152,7 +154,7 @@ class DroneControlApp(QMainWindow):
         self.init_ui()
         
         # Center the window on the screen
-        self.center_window()
+        # self.center_window()
 
         # Timer to update UI statistics
         self.ui_timer = QTimer()
@@ -199,7 +201,7 @@ class DroneControlApp(QMainWindow):
             "background-color: green; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
         )
         self.connection_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.connection_status.setFixedHeight(50)  # Fix the height to keep it static
+        self.connection_status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(self.connection_status)
         
 
@@ -217,6 +219,7 @@ class DroneControlApp(QMainWindow):
 
         # Left panel layout for drone stats and controls
         left_panel = QVBoxLayout()
+        
 
         # Battery Group Box
         battery_box = QGroupBox("Battery")
@@ -227,7 +230,7 @@ class DroneControlApp(QMainWindow):
         self.battery_bar.setStyleSheet(
             "QProgressBar::chunk { background-color: green; }"
         )
-        self.battery_bar.setFixedHeight(20)  # Reduce the height of the progress bar
+        self.battery_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         battery_layout.addWidget(self.battery_bar)
         battery_box.setLayout(battery_layout)
@@ -243,7 +246,7 @@ class DroneControlApp(QMainWindow):
         controller_layout.addWidget(self.controller_status_label)
 
         controller_status_box.setLayout(controller_layout)
-        controller_status_box.setFixedSize(200, 60)  # Compact size for the box
+        self.controller_status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         left_panel.addWidget(controller_status_box)
 
 
@@ -265,14 +268,18 @@ class DroneControlApp(QMainWindow):
         info_box.setLayout(info_layout)
         left_panel.addWidget(info_box)
 
-        content_layout.addLayout(left_panel) #Add to layout
+        # Add the left panel to the content layout
+        left_panel_widget = QWidget()
+        left_panel_widget.setLayout(left_panel)
+        left_panel_widget.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        content_layout.addWidget(left_panel_widget, stretch=1)  # 1/4 width
 
         # Center panel for live stream
         self.stream_label = QLabel("Drone Stream Placeholder")
         self.stream_label.setStyleSheet("background-color: #000; color: white; font-size: 14px; border: 1px solid #555;")
         self.stream_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stream_label.setFixedSize(1280, 720)  # Set size for 720p video
-        content_layout.addWidget(self.stream_label)
+        self.stream_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        content_layout.addWidget(self.stream_label, stretch=3)  # 3/4 width
 
         # Drone control buttons layout
         controls_layout = QVBoxLayout()
@@ -284,6 +291,7 @@ class DroneControlApp(QMainWindow):
         top_controls_layout.addWidget(self.create_control_button("W", "Forward"))
         top_controls_layout.addWidget(self.create_control_button("E", "Flip Right"))
         top_controls_layout.addWidget(self.create_control_button("R", "Flip Forward"))
+        
         controls_layout.addLayout(top_controls_layout)
 
         # Row 2: Middle Movement Controls
@@ -328,7 +336,7 @@ class DroneControlApp(QMainWindow):
         self.home_button = QPushButton("Αρχική Σελίδα")
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.home_button.clicked.connect(self.go_to_homepage)
-        main_layout.addWidget(self.home_button, alignment=Qt.AlignmentFlag.AlignBottom)
+        main_layout.addWidget(self.home_button)
         
         # Add Fullscreen Button
         self.fullscreen_button = QPushButton("Full Screen Drone Operation")

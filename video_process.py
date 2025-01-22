@@ -20,7 +20,7 @@ def initialize_model(model_path):
 
 def track_and_detect_batch(model, frames):
     # Run YOLO tracking on a batch of frames
-    results = model.track(source=frames, persist=True, imgsz=1280, conf=0.25, augment=True, agnostic_nms=True, batch=-1)
+    results = model.track(source=frames, persist=True, imgsz=1280, conf=0.66, augment=True, agnostic_nms=True, batch=-1)
     return results
 
 def create_output_folder(base_folder):
