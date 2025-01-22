@@ -300,7 +300,7 @@ class DroneControlApp(QMainWindow):
 
         # Footer buttons
         self.history_button = QPushButton("View Flight History")
-        self.history_button.setStyleSheet("font-size: 14px; padding: 10px;")
+        self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.history_button.clicked.connect(self.view_flight_history)
         main_layout.addWidget(self.history_button)
 
