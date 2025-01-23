@@ -193,32 +193,16 @@ class DroneOperatingPage(QWidget):
     def init_ui(self):
         try:
             
+            # Allow resizing
+            self.setWindowTitle("Drone Controller")
+            self.setGeometry(100, 100, 1024, 768)
+            
 
-            # Remove window decorations
-            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-
-            # Determine screen size and enforce 16:9 aspect ratio
-            screen = QApplication.primaryScreen().size()
-            screen_width, screen_height = screen.width(), screen.height()
-            aspect_ratio_width = 16
-            aspect_ratio_height = 9
-
-            # Calculate appropriate dimensions
-            max_width = screen_width
-            max_height = screen_width * aspect_ratio_height // aspect_ratio_width
-
-            if max_height > screen_height:
-                max_height = screen_height
-                max_width = screen_height * aspect_ratio_width // aspect_ratio_height
-
-            # Set fixed size based on aspect ratio
-            self.setFixedSize(max_width, max_height)
-
-            # Video Stream Placeholder (16:9)
+            # Video Stream Placeholder
             self.stream_label = QLabel(self)
-            self.stream_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.stream_label.setGeometry(0, 0, self.width(), self.height())
-            self.stream_label.setScaledContents(True)
+            self.stream_label.setStyleSheet("background-color: black;")
+            self.stream_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
             # Emergency Button
             self.emergency_button = QPushButton("EMERGENCY", self)
@@ -299,9 +283,10 @@ class DroneOperatingPage(QWidget):
 
             # Joystick Overlays
             self.joystick_left = DirectionalJoystick(self, "Left Joystick")
-            self.joystick_left.setGeometry(50, self.height() - 300, 200, 200)
+            self.joystick_left.setGeometry(50, self.height() - 250, 200, 200)
+
             self.joystick_right = CircularJoystick(self, "Right Joystick")
-            self.joystick_right.setGeometry(self.width() - 250, self.height() - 300, 200, 200)
+            self.joystick_right.setGeometry(self.width() - 250, self.height() - 250, 200, 200)
 
             # Drone State Label
             self.drone_state_label = QLabel("Landed", self)
@@ -428,6 +413,17 @@ class DroneOperatingPage(QWidget):
         # Update history button (if implemented)
         # self.update_history_button()
 
+    
+    def resizeEvent(self, event):
+        # Update video feed size
+        self.stream_label.setGeometry(0, 0, self.width(), self.height())
+
+        # Reposition UI elements dynamically
+        self.emergency_button.setGeometry(self.width() // 2 - 100, 10, 200, 50)
+        self.joystick_left.setGeometry(50, self.height() - 250, 200, 200)
+        self.joystick_right.setGeometry(self.width() - 250, self.height() - 250, 200, 200)
+        self.drone_state_label.move(self.width() // 2 - self.drone_state_label.width() // 2, self.height() - 100)
+        self.close_button.setGeometry(self.width() - 210, 10, 200, 50)
       
     # Flight video processing by passing it through the run() method        
     def process_flight_video(self, duration):
@@ -674,11 +670,10 @@ class CircularJoystick(QWidget):
 
 
 
-
 # if __name__ == "__main__":
 #      try:
 #          app = QApplication(sys.argv)
-#          window = DroneOperatingPage()
+#          window = DroneOperatingPage('fields')
 #          window.show()
 #          sys.exit(app.exec())
 #      except Exception as e:

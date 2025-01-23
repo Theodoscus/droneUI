@@ -122,9 +122,9 @@ class DroneControlApp(QMainWindow):
     def __init__(self, field_path):
         super().__init__()
         self.setWindowTitle("Drone Control")  # Set the window title
-        self.setWindowState(Qt.WindowState.WindowFullScreen)
+        #self.setWindowState(Qt.WindowState.WindowFullScreen)
 
-        # self.setGeometry(100,100,600,200)
+        self.setGeometry(100,100,1200,800)
         self.control_buttons = {}  # Dictionary to store control buttons
         # self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
