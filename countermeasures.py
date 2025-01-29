@@ -15,11 +15,6 @@ class CounterMeasuresWindow(QDialog):
     """
 
     def __init__(self, diseases, flight_db_path, parent=None):
-        """
-        :param diseases: A list of disease names in Greek (e.g., "Αλτερναρίωση").
-        :param flight_db_path: The path to the current flight_data.db for this run.
-        :param parent: The parent widget (optional).
-        """
         super().__init__(parent)
         self.setWindowTitle("Τρόποι Αντιμετώπισης για Ανιχνευμένες Ασθένειες")
 
@@ -82,7 +77,6 @@ class CounterMeasuresWindow(QDialog):
         """
         Populates the scrollable area with frames for each disease + recommended measures.
         """
-        # Example dictionary mapping disease -> Greek measures
         self.countermeasures_dict = {
             "Αλτερναρίωση": (
                 "Χρησιμοποιήστε μυκητοκτόνα που περιέχουν χλωροθαλονίλη ή μανκοζέμπ. "
@@ -135,15 +129,11 @@ class CounterMeasuresWindow(QDialog):
         for disease in diseases_list:
             if disease in self.countermeasures_dict:
                 disease_frame = QFrame()
-                disease_frame.setStyleSheet(
-                    "border: 1px solid black; margin-bottom: 10px; padding: 10px;"
-                )
+                disease_frame.setStyleSheet("border: 1px solid black; margin-bottom: 10px; padding: 10px;")
                 disease_layout = QVBoxLayout(disease_frame)
 
                 disease_label = QLabel(f"<b>{disease}</b>")
-                disease_label.setStyleSheet(
-                    "font-size: 16px; color: black; margin-bottom: 5px; border: none;"
-                )
+                disease_label.setStyleSheet("font-size: 16px; color: black; margin-bottom: 5px; border: none;")
                 disease_layout.addWidget(disease_label)
 
                 measures_text = self.countermeasures_dict[disease]
@@ -157,14 +147,12 @@ class CounterMeasuresWindow(QDialog):
     # ---------------------------------------------------------------------
     # Export & Personal Note
     # ---------------------------------------------------------------------
-
     def export_measures(self):
         """
         Exports the displayed countermeasures to a text file.
         """
         from PyQt6.QtWidgets import QFileDialog
 
-        # Build text content
         lines = ["## Ανιχνευμένες Ασθένειες & Τρόποι Αντιμετώπισης ##\n"]
         for disease in self.diseases:
             if disease in self.countermeasures_dict:
@@ -199,10 +187,6 @@ class PersonalNoteDialog(QDialog):
     """
 
     def __init__(self, db_path: str, parent=None):
-        """
-        :param db_path: The path to the flight_data.db where we store/retrieve the note.
-        :param parent: The parent QDialog or QWidget.
-        """
         super().__init__(parent)
         self.setWindowTitle("Προσωπική Σημείωση")
         self.setGeometry(500, 300, 400, 300)
@@ -222,6 +206,29 @@ class PersonalNoteDialog(QDialog):
         """Constructs the UI elements (QTextEdit and Save/Cancel buttons)."""
         main_layout = QVBoxLayout(self)
 
+        # -- ADD A STYLESHEET FOR THE DIALOG OR TEXTEDIT --
+        # The simplest approach: Make the entire QDialog background white
+        # and text color black
+        self.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                color: black;
+            }
+            QPushButton {
+                background-color: white;
+                color: black;
+            }
+            QTextEdit {
+                background-color: white;
+                color: black;
+                font-size: 14px;
+            }
+            QMessageBox {
+                background-color: white;
+                color: black;
+            }
+        """)
+
         self.note_edit = QTextEdit(self)
         self.note_edit.setPlaceholderText("Πληκτρολογήστε τις σημειώσεις σας εδώ...")
         main_layout.addWidget(self.note_edit)
@@ -240,7 +247,6 @@ class PersonalNoteDialog(QDialog):
     # ---------------------------------------------------------------------
     # Database Operations
     # ---------------------------------------------------------------------
-
     def create_notes_table(self):
         """
         Ensures there's a 'user_notes' table in flight_data.db
@@ -263,7 +269,7 @@ class PersonalNoteDialog(QDialog):
                 self, "Database Error", f"Unable to create user_notes table:\n{e}"
             )
 
-    def get_existing_note(self):
+    def get_existing_note(self) -> str:
         """
         Retrieves the existing note from user_notes (row with id=1).
         Returns the note text or an empty string if none found.
@@ -303,13 +309,33 @@ class PersonalNoteDialog(QDialog):
     # ---------------------------------------------------------------------
     # Button Handlers
     # ---------------------------------------------------------------------
-
     def save_note(self):
-        """
-        Grabs text from self.note_edit and stores it in the flight_data.db 'user_notes' table.
-        Closes dialog on success.
-        """
+        # Existing logic: save the note to DB
         note_content = self.note_edit.toPlainText().strip()
         self.save_note_to_db(note_content)
-        QMessageBox.information(self, "Αποθήκευση", "Η σημείωση αποθηκεύτηκε με επιτυχία.")
-        self.accept()
+
+        # Now, create a custom QMessageBox with a dark-on-light style
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Αποθήκευση")
+        msg.setText("Η σημείωση αποθηκεύτηκε με επιτυχία.")
+        msg.setIcon(QMessageBox.Icon.Information)
+
+        # Apply a stylesheet so the text + background are visible
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: black;  /* Message text color */
+                font-size: 14px;
+            }
+            QMessageBox QPushButton {
+                background-color: white; 
+                color: black; 
+                font-size: 14px;
+            }
+        """)
+
+        msg.exec()  # Show the message box
+
+        self.accept()  # Finally close the dialog after user presses OK

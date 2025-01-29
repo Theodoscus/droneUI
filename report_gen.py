@@ -843,8 +843,13 @@ class DroneReportApp(QMainWindow):
             QMessageBox.information(self, "Δεν Βρέθηκαν Ασθένειες", "Δεν ανιχνεύθηκαν μη-υγιή φυτά.")
             return
 
-        cm_window = CounterMeasuresWindow(diseases_gr, self)
+        # Inside show_countermeasures in report_gen.py:
+        db_path = os.path.join(self.current_flight_folder, "flight_data.db")
+
+        # Pass db_path as the second argument, plus 'self' as the parent if you want:
+        cm_window = CounterMeasuresWindow(diseases_gr, db_path, parent=self)
         cm_window.exec()
+
 
     def open_video_in_external_player(self):
         """Opens processed video in default OS media player."""
