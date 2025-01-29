@@ -1,5 +1,8 @@
-import os
 import sys
+import os
+import datetime
+import random
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QComboBox, QPushButton, QLineEdit, QMessageBox, QSpacerItem, QSizePolicy
@@ -7,42 +10,69 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap, QPalette, QColor
 
-from shared import open_drone_control,open_report_gen
+from shared import open_drone_control, open_report_gen
 
 
 FIELDS_FOLDER = "fields"
 
 
 class HomePage(QMainWindow):
+    """
+    The main landing/home page for AgroDrone, allowing users to:
+      - Select an existing field or create a new one.
+      - Proceed to drone control for a selected field.
+      - View flight history if available.
+    """
+
     def __init__(self):
+        """
+        Initializes the HomePage window with fixed size, sets up the UI,
+        and centers the window on the screen.
+        """
         super().__init__()
         self.setWindowTitle("AgroDrone - Home")
         # self.setGeometry(200, 200, 600, 500)
+
+        # Set up the UI
         self.init_ui()
+        # Center the window
         self.center_window()
-        self.setFixedSize(600, 500)  # Set fixed width and height
-        
+        # Fix the window size
+        self.setFixedSize(600, 500)
+
+    # ---------------------------------------------------------------------
+    # UI Initialization
+    # ---------------------------------------------------------------------
+
     def init_ui(self):
-        # Main widget and layout
+        """
+        Builds and lays out the main interface components:
+          - Title + Logo
+          - Field selector
+          - Drone/History navigation buttons
+          - Controls for creating a new field
+        """
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        main_widget.setLayout(main_layout)
+        main_layout = QVBoxLayout(main_widget)
 
-        # Set background color
+        # Set a neutral background color
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Window, QColor("#ECECEA"))
         self.setPalette(palette)
 
+        # ---------------
         # Title Section
+        # ---------------
         title_layout = QVBoxLayout()
+
         title_label = QLabel("AgroDrone")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setFont(QFont("Arial", 32, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #2e7d32;")
         title_layout.addWidget(title_label)
 
-        # Space for logo
+        # Display a logo if available, otherwise fallback text
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_pixmap = QPixmap("logo.webp")  # Replace with your logo path
@@ -56,8 +86,11 @@ class HomePage(QMainWindow):
 
         main_layout.addLayout(title_layout)
 
-        # Dropdown for selecting a field
+        # ---------------
+        # Field Selector
+        # ---------------
         dropdown_layout = QVBoxLayout()
+
         dropdown_label = QLabel("Επιλογή Χωραφιού:")
         dropdown_label.setFont(QFont("Arial", 14))
         dropdown_label.setStyleSheet("color: #37474f;")
@@ -71,24 +104,28 @@ class HomePage(QMainWindow):
                 padding: 5px;
                 border: 1px solid #bdbdbd;
                 background-color: #ffffff;
-                color: #37474f;  /* Darker color for text */
+                color: #37474f;
             }
             QComboBox QAbstractItemView {
                 background-color: #ffffff;
-                color: #37474f;  /* Darker color for dropdown items */
+                color: #37474f;
                 border: 1px solid #bdbdbd;
             }
             """
         )
+        # Populate the combo with existing fields
         self.field_selector.addItems(self.get_existing_fields())
         self.field_selector.currentTextChanged.connect(self.update_view_history_button)
         dropdown_layout.addWidget(self.field_selector)
+
         main_layout.addLayout(dropdown_layout)
 
+        # ---------------
         # Buttons Section
+        # ---------------
         buttons_layout = QVBoxLayout()
 
-        # Proceed Button
+        # Drone Control / Proceed Button
         proceed_button = QPushButton("Έλεγχος Drone")
         proceed_button.setFont(QFont("Arial", 16))
         proceed_button.setStyleSheet(
@@ -111,7 +148,7 @@ class HomePage(QMainWindow):
             }
             QPushButton:disabled {
                 background-color: #b0bec5;  /* Faded color for disabled state */
-                color: #eceff1;  /* Light text for disabled button */
+                color: #eceff1;            /* Light text for disabled button */
             }
             """
         )
@@ -119,8 +156,9 @@ class HomePage(QMainWindow):
         self.history_button.clicked.connect(self.view_flight_history)
         buttons_layout.addWidget(self.history_button)
 
-        # New Field Input and Button
+        # New Field Input + Create Button
         new_field_layout = QHBoxLayout()
+
         self.new_field_input = QLineEdit()
         self.new_field_input.setPlaceholderText("Εισάγετε το όνομα του νέου χωραφιού")
         self.new_field_input.setFont(QFont("Arial", 14))
@@ -130,7 +168,7 @@ class HomePage(QMainWindow):
                 padding: 5px;
                 border: 1px solid #bdbdbd;
                 background-color: #ffffff;
-                color: #37474f;  /* Darker text color for readability */
+                color: #37474f;
             }
             """
         )
@@ -147,58 +185,78 @@ class HomePage(QMainWindow):
         buttons_layout.addLayout(new_field_layout)
         main_layout.addLayout(buttons_layout)
 
-        # Spacer to center elements vertically
+        # ---------------
+        # Vertical Spacer
+        # ---------------
         main_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
-        # Initialize button states
+        # Initial update to set the state of the "View History" button
         self.update_view_history_button()
-        
-        
+
+    # ---------------------------------------------------------------------
+    # Window Positioning
+    # ---------------------------------------------------------------------
+
     def center_window(self):
-        """Centers the window on the screen."""
-        screen = self.screen().availableGeometry()  # Get available screen geometry
+        """
+        Centers the window on the primary screen.
+        Called after init_ui to ensure correct geometry.
+        """
+        screen = self.screen().availableGeometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
         self.move(x, y)
 
+    # ---------------------------------------------------------------------
+    # Field Management
+    # ---------------------------------------------------------------------
 
     def get_existing_fields(self):
-        # Get a list of existing field folders
+        """
+        Returns a sorted list of existing field folders in FIELDS_FOLDER.
+        Creates FIELDS_FOLDER if it doesn't exist.
+        """
         if not os.path.exists(FIELDS_FOLDER):
             os.makedirs(FIELDS_FOLDER)
         return sorted(os.listdir(FIELDS_FOLDER))
 
     def update_view_history_button(self):
-        """Enable or disable the 'View Flight History' button based on folder contents."""
+        """
+        Enables or disables the 'View Flight History' button based on whether
+        the selected field has the necessary folders/files:
+          - runs folder with content
+          - flights folder with content
+          - field_data.db
+        """
         selected_field = self.field_selector.currentText()
         if not selected_field:
             self.history_button.setEnabled(False)
             return
 
-        # Path to the selected field
         field_path = os.path.join(FIELDS_FOLDER, selected_field)
-        
-        # Check if the field folder exists
         if not os.path.exists(field_path):
             self.history_button.setEnabled(False)
             return
 
-        # Paths for required subfolders and database file
         runs_path = os.path.join(field_path, "runs")
         flights_path = os.path.join(field_path, "flights")
         flight_data_db = os.path.join(field_path, "field_data.db")
 
-        # Check conditions: runs and flights folders exist and have content, and flight_data.db exists
         runs_has_content = os.path.exists(runs_path) and any(os.listdir(runs_path))
         flights_has_content = os.path.exists(flights_path) and any(os.listdir(flights_path))
         db_exists = os.path.exists(flight_data_db)
 
-        # Enable the button only if all conditions are met
         self.history_button.setEnabled(runs_has_content and flights_has_content and db_exists)
 
-
+    # ---------------------------------------------------------------------
+    # Navigation Methods
+    # ---------------------------------------------------------------------
 
     def proceed_to_drone_control(self):
+        """
+        Opens the DroneControlApp for the currently selected field,
+        if valid. Closes this window afterward.
+        """
         selected_field = self.field_selector.currentText()
         if not selected_field:
             QMessageBox.warning(self, "Warning", "Please select a field.")
@@ -209,48 +267,55 @@ class HomePage(QMainWindow):
             QMessageBox.warning(self, "Error", f"Field path does not exist: {field_path}")
             return
 
-        # Launch DroneControlApp with the selected field path
+        # Launch drone control
         self.drone_control_app = open_drone_control(field_path)
         self.drone_control_app.show()
         self.close()
 
-
     def view_flight_history(self):
+        """
+        Opens the DroneReportApp with the currently selected field if valid.
+        """
         selected_field = self.field_selector.currentText()
         if not selected_field:
             QMessageBox.warning(self, "Warning", "Please select a field.")
             return
 
-        # Determine the field path
         field_path = os.path.join(FIELDS_FOLDER, selected_field)
         if not os.path.exists(field_path):
             QMessageBox.warning(self, "Error", f"Field path does not exist: {field_path}")
             return
 
-        # Launch the DroneReportApp with the selected field path
+        # Launch flight history/report
         self.report_app = open_report_gen(field_path)
         self.report_app.show()
 
-
     def create_new_field(self):
+        """
+        Creates a new field folder if it doesn't already exist.
+        Then adds the new field to the combo box and sets it as current.
+        """
         new_field = self.new_field_input.text().strip()
         if not new_field:
             QMessageBox.warning(self, "Warning", "Field name cannot be empty.")
             return
+
         field_path = os.path.join(FIELDS_FOLDER, new_field)
         if os.path.exists(field_path):
             QMessageBox.warning(self, "Warning", "Field already exists.")
             return
+
         os.makedirs(field_path)
         self.field_selector.addItem(new_field)
         self.field_selector.setCurrentText(new_field)
         QMessageBox.information(self, "Success", f"Field '{new_field}' created successfully!")
         self.new_field_input.clear()
         self.update_view_history_button()
-        
-    
 
 
+# ---------------------------------------------------------------------
+# Main Guard
+# ---------------------------------------------------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = HomePage()
