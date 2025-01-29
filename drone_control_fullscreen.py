@@ -5,94 +5,65 @@ import os
 import random
 import logging
 import datetime
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGroupBox, QVBoxLayout, QProgressBar,QHBoxLayout, QMessageBox
+
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QLabel, QPushButton, QGroupBox, QVBoxLayout, QProgressBar,
+    QHBoxLayout, QMessageBox
+)
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPolygon
 from PyQt6.QtCore import QPoint
+
 from video_process import run
 from shared import open_drone_control
 
 
-
-# # Setup logging
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Global exception handler to log uncaught exceptions
 def log_uncaught_exceptions(exctype, value, traceback):
+    """
+    Global exception handler to log uncaught exceptions at CRITICAL level.
+    """
     logging.critical("Uncaught exception", exc_info=(exctype, value, traceback))
 
 sys.excepthook = log_uncaught_exceptions
 
-# class VideoThread(QThread):
-#     frame_updated = pyqtSignal(QImage)
 
-#     def __init__(self):
-#         super().__init__()
-#         try:
-#             self.capture = cv2.VideoCapture(1)  # Open the default webcam
-#             if not self.capture.isOpened():
-#                 logging.critical("Failed to open webcam.")
-#                 raise Exception("Webcam not accessible.")
-#             self.running = True
-#         except Exception as e:
-#             logging.error(f"Error initializing VideoThread: {e}")
+# ---------------------------------------------------------------------
+# MockPTello: A Mock Drone Class
+# ---------------------------------------------------------------------
 
-#     def run(self):
-#         while self.running:
-#             try:
-#                 ret, frame = self.capture.read()
-#                 if ret:
-#                     # Convert frame to RGB and then to QImage
-#                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-#                     height, width, channel = frame.shape
-#                     bytes_per_line = channel * width
-#                     qt_image = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-#                     self.frame_updated.emit(qt_image)
-#                 else:
-#                     logging.warning("Failed to read frame from webcam.")
-#             except Exception as e:
-#                 logging.error(f"Error in VideoThread run: {e}")
-
-#     def stop(self):
-#         try:
-#             self.running = False
-#             self.capture.release()
-#             self.quit()
-#         except Exception as e:
-#             logging.error(f"Error stopping VideoThread: {e}")
-            
-# Mock class to simulate the behavior of a drone
 class MockPTello:
+    """
+    Simulates some drone-like behaviors (flying, streaming video).
+    No hardware communication is done.
+    """
+
     def __init__(self):
-        # Tracks whether the drone is currently flying
         self.is_flying = False
-        # Tracks whether the video stream is active
         self.stream_on = False
 
     def connect(self):
-        # Simulates connecting to the drone
+        """Simulates connecting to the drone."""
         print("Mock: Drone connected")
 
-    
-
     def streamon(self):
-        # Simulates starting the video stream from the drone
+        """Simulates starting the video stream."""
         self.stream_on = True
         print("Mock: Video stream started")
 
     def streamoff(self):
-        # Simulates stopping the video stream from the drone
+        """Simulates stopping the video stream."""
         self.stream_on = False
         print("Mock: Video stream stopped")
 
     def end(self):
-        # Simulates disconnecting from the drone
+        """Simulates fully disconnecting from the drone."""
         print("Mock: Drone disconnected")
-        
+
+    # ------------------
+    # Movement Methods
+    # ------------------
     def move_forward(self):
-        print(self.is_flying)
         if not self.is_flying:
-            
             print("Drone cannot move because it has not taken off.")
             return
         print("Moving forward...")
@@ -151,52 +122,86 @@ class MockPTello:
             return
         print("Flipping right...")
 
+
+# ---------------------------------------------------------------------
+# DroneOperatingPage: Full-Screen Drone Operation UI
+# ---------------------------------------------------------------------
+
 class DroneOperatingPage(QWidget):
-    def __init__(self,field_path):
+    """
+    A fullscreen-like UI that displays:
+      - Mock drone video stream placeholder
+      - Joystick overlays for left and right sticks
+      - Buttons for takeoff, land, emergency
+      - Drone stats (battery, height, speed, flight duration)
+      - Integration with 'video_process.run' for flight video after landing
+    """
+
+    def __init__(self, field_path):
+        """
+        Constructor for DroneOperatingPage.
+          field_path: The folder path for the current field, used for saving flight data.
+        """
         super().__init__()
-        
+
+        # Mock drone initialization
         self.drone = MockPTello()
         self.drone.connect()
-        self.is_flying = False  # Tracks if the drone is flying
-        self.flight_duration = 0  # Tracks the flight duration
-        self.battery_level = 100  # Battery level of the drone
-        self.fly_height = 0  # Height of the drone
-        self.button_states = {}  # Track button states to handle single presses
-        self.speed = 0  # Speed of the drone
-        self.current_flight_folder = None  # Folder to save flight data
-        self.field_path = field_path  # Save the field path
-        self.flights_folder = os.path.join(self.field_path, "flights")  # Path to flights folder
-        os.makedirs(self.flights_folder, exist_ok=True)  # Ensure the flights folder exists
-        
-        self.flight_timer = QTimer()  # Timer to update flight duration
+
+        # Internal states
+        self.is_flying = False
+        self.flight_duration = 0
+        self.battery_level = 100
+        self.fly_height = 0
+        self.speed = 0
+        self.current_flight_folder = None
+        self.field_path = field_path
+        self.flights_folder = os.path.join(self.field_path, "flights")
+        os.makedirs(self.flights_folder, exist_ok=True)
+
+        # Button states to handle single-press logic
+        self.button_states = {}
+
+        # Timer for flight duration
+        self.flight_timer = QTimer()
         self.flight_timer.timeout.connect(self.update_flight_duration)
-        
-        self.init_ui()
-        
-        # Timer to update UI statistics
+
+        # Timer to periodically update UI stats
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui_stats)
-        self.ui_timer.start(2000)  # Update every 2 seconds
-        
-        # Timer to update joystick overlays
+        self.ui_timer.start(2000)  # every 2 seconds
+
+        # Timer for joystick overlays & controller setup
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_joystick_inputs)
         self.timer.timeout.connect(self.setup_controller)
-        self.timer.start(20)  # Update every 20ms for smoother inputs
+        self.timer.start(20)  # every 20ms for smoother polling
 
-        # Initialize pygame for controller input
+        # Initialize PyGame for controller input
         pygame.init()
         pygame.joystick.init()
         self.controller = None
+
+        # Build the UI
+        self.init_ui()
         self.setup_controller()
-        
+
+    # ---------------------------------------------------------------------
+    # UI Setup
+    # ---------------------------------------------------------------------
+
     def init_ui(self):
+        """
+        Sets up the fullscreen-like UI:
+          - Stream label (full background)
+          - Emergency + Close/Windowed buttons
+          - Status label
+          - Battery/Drone info
+          - Joystick overlays
+        """
         try:
-            
-            # Allow resizing
             self.setWindowTitle("Drone Controller")
             self.setGeometry(100, 100, 1024, 768)
-            
 
             # Video Stream Placeholder
             self.stream_label = QLabel(self)
@@ -210,60 +215,44 @@ class DroneOperatingPage(QWidget):
             self.emergency_button.setStyleSheet("background-color: red; color: white; font-size: 18px; font-weight: bold;")
             self.emergency_button.clicked.connect(self.emergency_landing)
 
-            # Close Button
+            # Close/Windowed Button
             self.close_button = QPushButton("Λειτουργία Παραθύρου", self)
             self.close_button.setStyleSheet("background-color: blue; color: white; font-size: 16px; font-weight: bold;")
             self.close_button.clicked.connect(self.launch_windowed)
-
-            # Adjust size to fit the contents dynamically
             self.close_button.adjustSize()
-
-            # Optionally position the button after adjusting its size
             button_width = self.close_button.width()
             self.close_button.setGeometry(self.width() - button_width - 10, 10, 200, 50)
 
-        
-
-            # Status Information (Signal, Connection)
+            # Connection Status Label
             self.status_label = QLabel("Signal: Strong | Connection: Stable", self)
             self.status_label.setStyleSheet(
                 "background-color: rgba(0, 0, 0, 0.5); color: white; font-size: 18px; padding: 10px;"
             )
             self.status_label.setGeometry(10, 10, 400, 50)
 
-            # Controller Status Box
+            # Controller Status
             controller_status_box = QGroupBox("Controller Status", self)
             controller_layout = QVBoxLayout()
-
             self.controller_status_label = QLabel("No Controller Connected")
             self.controller_status_label.setStyleSheet("color: red; font-size: 14px; font-weight: bold;")
             controller_layout.addWidget(self.controller_status_label)
-
             controller_status_box.setLayout(controller_layout)
-            
             controller_status_box.setGeometry(10, 70, 400, 50)
 
-            
-
-            # Battery Level Indicator
+            # Battery Box
             battery_box = QGroupBox("Battery", self)
             battery_layout = QVBoxLayout()
-            battery_box.setGeometry(10, 130, 400, 50)  # Adjust x, y, width, and height
-
+            battery_box.setGeometry(10, 130, 400, 50)
             self.battery_bar = QProgressBar()
             self.battery_bar.setValue(self.battery_level)
-            self.battery_bar.setStyleSheet(
-                "QProgressBar::chunk { background-color: green; }"
-            )
-
+            self.battery_bar.setStyleSheet("QProgressBar::chunk { background-color: green; }")
             battery_layout.addWidget(self.battery_bar)
             battery_box.setLayout(battery_layout)
-            
-            # Drone information group box
-            info_box = QGroupBox("Drone Info",self)
+
+            # Drone Info Box
+            info_box = QGroupBox("Drone Info", self)
             info_layout = QVBoxLayout()
-            info_box.setGeometry(10, 190, 400, 250)  # Adjust x, y, width, and height
-            
+            info_box.setGeometry(10, 190, 400, 250)
             self.info_labels = {
                 "Temperature": QLabel("20°C"),
                 "Height": QLabel("0 cm"),
@@ -277,9 +266,6 @@ class DroneOperatingPage(QWidget):
                 row.addWidget(label)
                 info_layout.addLayout(row)
             info_box.setLayout(info_layout)
-            
-
-        
 
             # Joystick Overlays
             self.joystick_left = DirectionalJoystick(self, "Left Joystick")
@@ -291,160 +277,174 @@ class DroneOperatingPage(QWidget):
             # Drone State Label
             self.drone_state_label = QLabel("Landed", self)
             self.drone_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.drone_state_label.setStyleSheet("background-color: rgba(200, 200, 200, 0.7); color: black; font-size: 18px; font-weight: bold; padding: 5px;")
+            self.drone_state_label.setStyleSheet(
+                "background-color: rgba(200, 200, 200, 0.7); color: black; font-size: 18px; font-weight: bold; padding: 5px;"
+            )
+            self.drone_state_label.move(self.width() // 2 - 50, self.height() - 100)
+            self.drone_state_label.adjustSize()
 
-            # Place the label where it was originally intended
-            self.drone_state_label.move(self.width() // 2 - 50, self.height() - 100)  # Example fixed position
-            self.drone_state_label.adjustSize()  # Adjust size to fit the contents dynamically
-
-            # Start the video thread
-            # self.video_thread = VideoThread()
-            # self.video_thread.frame_updated.connect(self.update_video_frame)
-            # self.video_thread.start()
         except Exception as e:
             logging.error(f"Error initializing DroneOperatingPage: {e}")
 
-    def launch_windowed(self):
-        """Launch the fullscreen drone operation page."""
-        # Stop any active timers
-        self.flight_timer.stop()
-        self.ui_timer.stop()
-        self.timer.stop()
-        
-        # Stop the video thread
-        # if hasattr(self, 'video_thread') and self.video_thread.isRunning():
-        #     self.video_thread.stop()
-        
-        # Quit pygame to release resources
-        pygame.joystick.quit()
-        pygame.quit()
-        
-        self.fullscreen_window = open_drone_control(self.field_path)
-        self.fullscreen_window.show()
-        self.close()  # Close the current window
-    
-    # Update the flight duration
+    # ---------------------------------------------------------------------
+    # Window Resizing
+    # ---------------------------------------------------------------------
+
+    def resizeEvent(self, event):
+        """
+        Adjusts positions/sizes of UI elements when the window is resized.
+        """
+        super().resizeEvent(event)
+
+        # Resize stream label to fill the background
+        self.stream_label.setGeometry(0, 0, self.width(), self.height())
+
+        # Reposition emergency and close buttons
+        self.emergency_button.setGeometry(self.width() // 2 - 100, 10, 200, 50)
+        self.close_button.setGeometry(self.width() - 210, 10, 200, 50)
+
+        # Joystick overlays
+        self.joystick_left.setGeometry(50, self.height() - 250, 200, 200)
+        self.joystick_right.setGeometry(self.width() - 250, self.height() - 250, 200, 200)
+
+        # Drone state label near bottom center
+        self.drone_state_label.move(
+            self.width() // 2 - self.drone_state_label.width() // 2,
+            self.height() - 100
+        )
+
+    # ---------------------------------------------------------------------
+    # Flight Timers & Stats
+    # ---------------------------------------------------------------------
+
     def update_flight_duration(self):
+        """Increments flight duration every second."""
         self.flight_duration += 1
         self.info_labels["Flight Duration"].setText(f"{self.flight_duration} sec")
 
-    # Update UI stats dynamically
     def update_ui_stats(self):
-        self.battery_level = max(0, self.battery_level - random.randint(0, 2))  # Simulate battery drain
+        """
+        Simulates random battery drain, height, speed
+        and updates the battery bar + drone info labels.
+        """
+        self.battery_level = max(0, self.battery_level - random.randint(0, 2))
         self.fly_height = random.randint(0, 500) if self.drone.is_flying else 0
         self.speed = random.uniform(0, 10) if self.drone.is_flying else 0
-        
-        # Update battery progress bar
+
         self.battery_bar.setValue(self.battery_level)
-
-        # Check for low battery and display notification
-        # if self.battery_level < 20:
-        #     self.notification_label.setText("Warning: Battery level is critically low!")
-        #     self.notification_label.setVisible(True)
-        # else:
-        #     self.notification_label.setVisible(False)
-
-        # Update other stats
         self.info_labels["Height"].setText(f"{self.fly_height} cm")
         self.info_labels["Speed"].setText(f"{self.speed:.2f} cm/s")
-        
-    
+
+    # ---------------------------------------------------------------------
+    # Take Off & Land
+    # ---------------------------------------------------------------------
+
     def take_off(self):
-        # Check if the drone is already flying
+        """
+        Initiates a delayed takeoff sequence if the drone isn't flying.
+        Disables the close_button until takeoff is complete.
+        """
         if not self.drone.is_flying:
             self.drone_state_label.setText("Taking Off...")
-            self.drone_state_label.adjustSize()  # Resize the label dynamically
+            self.drone_state_label.adjustSize()
             self.close_button.setEnabled(False)
             self.close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
-            
-            # Delay the following actions by 5 seconds
-            QTimer.singleShot(5000, lambda: self._perform_take_off())
+
+            # Delay the actual takeoff steps by 5 seconds
+            QTimer.singleShot(5000, self._perform_take_off)
 
     def _perform_take_off(self):
-        
-        """Perform the actual takeoff actions after the delay."""
+        """Called after the 5-second delay, finalizing the takeoff state."""
         self.drone_state_label.setText("On Air.")
-        self.drone_state_label.adjustSize()  # Resize the label dynamically
+        self.drone_state_label.adjustSize()
         self.drone.is_flying = True
-        
+
         self.flight_timer.start(1000)
         self.flight_start_time = datetime.datetime.now()
 
-        # Create flight folder
+        # Create a folder for this flight
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
         os.makedirs(self.current_flight_folder, exist_ok=True)
 
-        # Start video stream
         self.stream_label.setText("Stream On")
-        #self.drone.streamon()
+        # self.drone.streamon()  # Mock stream
         print("Take off successful")
 
     def land(self):
+        """
+        Initiates a delayed landing sequence if the drone is flying.
+        Re-enables the close_button after landing completes.
+        """
         if self.drone.is_flying:
             self.drone_state_label.setText("Landing...")
-            self.drone_state_label.adjustSize()  # Resize the label dynamically
+            self.drone_state_label.adjustSize()
             self.close_button.setEnabled(True)
             self.close_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
-            # Delay the following actions by 5 seconds
-            QTimer.singleShot(5000, lambda: self._perform_landing())
+
+            # Delay the actual landing steps by 5 seconds
+            QTimer.singleShot(5000, self._perform_landing)
 
     def _perform_landing(self):
-        print("check check")
-        """Perform the actual landing actions after the delay."""
+        """Called after the 5-second delay, finalizing the landing state."""
         self.drone_state_label.setText("Landed.")
-        self.drone_state_label.adjustSize()  # Resize the label dynamically
+        self.drone_state_label.adjustSize()
         self.drone.is_flying = False
+
         self.flight_timer.stop()
         self.stream_label.setText("Stream Off")
-        #self.drone.streamoff()
+        # self.drone.streamoff()
         print("Landing successful")
 
-        # Calculate flight duration
+        # Calculate final flight duration
         self.flight_end_time = datetime.datetime.now()
         duration = self.flight_end_time - self.flight_start_time
 
-        # Display flight completion information
         QMessageBox.information(self, "Drone Status", f"Η πτήση ολοκληρώθηκε!\nΔιάρκεια: {duration}")
 
         # Process flight video
         self.process_flight_video(duration)
 
-        # Update history button (if implemented)
-        # self.update_history_button()
+    def emergency_landing(self):
+        """
+        Immediately sets the drone state to an 'emergency landing'.
+        Could be expanded for real failsafe logic.
+        """
+        logging.info("Emergency landing initiated!")
+        self.update_drone_state("Emergency Landing")
 
-    
-    def resizeEvent(self, event):
-        # Update video feed size
-        self.stream_label.setGeometry(0, 0, self.width(), self.height())
-
-        # Reposition UI elements dynamically
-        self.emergency_button.setGeometry(self.width() // 2 - 100, 10, 200, 50)
-        self.joystick_left.setGeometry(50, self.height() - 250, 200, 200)
-        self.joystick_right.setGeometry(self.width() - 250, self.height() - 250, 200, 200)
+    def update_drone_state(self, state: str):
+        """
+        Updates the label indicating the drone's current state.
+        (e.g., Landing, Landed, Taking Off, Emergency, etc.)
+        """
+        self.drone_state_label.setText(state)
+        self.drone_state_label.adjustSize()
         self.drone_state_label.move(self.width() // 2 - self.drone_state_label.width() // 2, self.height() - 100)
-        self.close_button.setGeometry(self.width() - 210, 10, 200, 50)
-      
-    # Flight video processing by passing it through the run() method        
+
+    # ---------------------------------------------------------------------
+    # Video Processing
+    # ---------------------------------------------------------------------
+
     def process_flight_video(self, duration):
-        """Process the flight video using video_process.py and save results in the `runs` folder."""
+        """
+        Searches for a flight video in self.current_flight_folder and processes it
+        using 'video_process.run', saving results into 'runs' folder of the field.
+        """
         if not self.current_flight_folder:
             QMessageBox.warning(self, "Error", "Flight folder not set. Cannot process video.")
             return
 
-        # Ensure the `runs` folder exists within the field path
         runs_folder = os.path.join(self.field_path, "runs")
         os.makedirs(runs_folder, exist_ok=True)
 
-        # Generate a run folder based on the current timestamp
+        # Create a new run folder for the processed results
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         run_folder = os.path.join(runs_folder, f"run_{timestamp}")
         os.makedirs(run_folder, exist_ok=True)
 
-        # Supported video formats
+        # Check for a flight video
         video_formats = [".mp4", ".mov", ".avi"]
-
-        # Search for a video file in the current flight folder
         video_path = None
         for fmt in video_formats:
             potential_path = os.path.join(self.current_flight_folder, f"flight_video{fmt}")
@@ -454,30 +454,26 @@ class DroneOperatingPage(QWidget):
 
         if video_path:
             try:
-                # Call the `run` function with the correct paths
                 run(video_path, duration, self.field_path)
-
                 QMessageBox.information(
                     self,
                     "Video Processing",
-                    f"Η επεξεργασία του βίντεο ολοκληρώθηκε επιτυχώς!\nΑποτελέσματα αποθηκεύτηκαν στον φάκελο:\n{run_folder}"
+                    f"Η επεξεργασία του βίντεο ολοκληρώθηκε επιτυχώς!\nΑποτελέσματα στον φάκελο:\n{run_folder}"
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Processing Error", f"Σφάλμα κατά την επεξεργασία του βίντεο: {e}")
         else:
             QMessageBox.warning(self, "Video Missing", "Δεν βρέθηκε βίντεο πτήσης για επεξεργασία!")
 
-    
-    def update_video_frame(self, frame):
-        """Update the QLabel with the new video frame."""
-        try:
-            pixmap = QPixmap.fromImage(frame)
-            self.stream_label.setPixmap(pixmap)
-        except Exception as e:
-            logging.error(f"Error updating video frame: {e}")
+    # ---------------------------------------------------------------------
+    # Controller & Joystick Inputs
+    # ---------------------------------------------------------------------
 
     def setup_controller(self):
-        """Initialize the Xbox controller if connected."""
+        """
+        Detects if a joystick controller (e.g. Xbox) is present.
+        Updates the controller_status_label accordingly.
+        """
         try:
             if pygame.joystick.get_count() > 0:
                 self.controller = pygame.joystick.Joystick(0)
@@ -493,62 +489,71 @@ class DroneOperatingPage(QWidget):
             logging.error(f"Error setting up controller: {e}")
 
     def update_joystick_inputs(self):
-        """Poll joystick inputs and update the overlays."""
-        try:
-            if self.controller:
+        """
+        Polls joystick input to update overlays and move the drone.
+        Called every 20ms by a QTimer.
+        """
+        if self.controller:
+            try:
                 pygame.event.pump()
+                left_x = self.controller.get_axis(0)
+                left_y = self.controller.get_axis(1)
+                right_x = self.controller.get_axis(2)
+                right_y = self.controller.get_axis(3)
 
-                # Handle joystick axes
-                left_x = self.controller.get_axis(0)  # Left stick horizontal
-                left_y = self.controller.get_axis(1)  # Left stick vertical
-                right_x = self.controller.get_axis(2)  # Right stick horizontal
-                right_y = self.controller.get_axis(3)  # Right stick vertical
-
-                # Smooth the inputs
+                # Apply small deadzone
                 left_x = self.smooth_input(left_x)
                 left_y = self.smooth_input(left_y)
                 right_x = self.smooth_input(right_x)
                 right_y = self.smooth_input(right_y)
 
-                # Update joysticks
-                self.joystick_left.update_position(left_x, -left_y)  # Invert vertical axis
-                self.joystick_right.update_position(right_x, -right_y)  # Invert vertical axis
+                # Update Joystick Overlays
+                self.joystick_left.update_position(left_x, -left_y)   # Invert Y
+                self.joystick_right.update_position(right_x, -right_y)
 
-                # Map joystick inputs to drone actions
+                # Map axes to drone moves
                 self.map_joystick_to_drone(left_x, left_y, right_x, right_y)
 
-                # Handle button presses
-                for button_id, action in [(0, self.take_off), (1, self.land)]:  # Button 0: A, Button 1: B
+                # Button checks (e.g., button 0 -> takeoff, 1 -> land)
+                for button_id, action in [(0, self.take_off), (1, self.land)]:
                     button_pressed = self.controller.get_button(button_id)
-                    if button_pressed and not self.button_states.get(button_id, False):
-                        # Trigger action on initial press
+                    previously_pressed = self.button_states.get(button_id, False)
+
+                    # If pressed now but wasn't pressed before => initial press
+                    if button_pressed and not previously_pressed:
                         action()
-                        self.button_states[button_id] = True  # Mark button as pressed
+                        self.button_states[button_id] = True
                     elif not button_pressed:
-                        self.button_states[button_id] = False  # Reset button state when released
-        except Exception as e:
-            logging.error(f"Error updating joystick inputs: {e}")
+                        self.button_states[button_id] = False
+            except Exception as e:
+                logging.error(f"Error updating joystick inputs: {e}")
 
     def map_joystick_to_drone(self, left_x, left_y, right_x, right_y):
-        """Map joystick inputs to drone movements."""
+        """
+        Maps joystick axis values to corresponding drone actions.
+        - left_x, left_y: Movement in horizontal/vertical plane
+        - right_x, right_y: Rotation, up/down
+        """
         try:
-            
+            # Vertical motion on left Y
             if left_y < -0.5:
                 self.drone.move_forward()
-        
             elif left_y > 0.5:
                 self.drone.move_backward()
 
+            # Horizontal motion on left X
             if left_x < -0.5:
                 self.drone.move_left()
             elif left_x > 0.5:
                 self.drone.move_right()
 
+            # Vertical motion on right Y
             if right_y < -0.5:
                 self.drone.move_up()
             elif right_y > 0.5:
                 self.drone.move_down()
 
+            # Rotation on right X
             if right_x < -0.5:
                 self.drone.rotate_left()
             elif right_x > 0.5:
@@ -557,54 +562,62 @@ class DroneOperatingPage(QWidget):
             logging.error(f"Error mapping joystick inputs to drone: {e}")
 
     def smooth_input(self, value, threshold=0.1):
-        """Apply deadzone and smoothing to joystick input."""
+        """
+        Applies a deadzone threshold and rounds joystick input for smoother movement.
+        Returns 0 if |value| < threshold.
+        """
         if abs(value) < threshold:
             return 0.0
         return round(value, 2)
 
-    
+    # ---------------------------------------------------------------------
+    # Switching to Windowed Mode
+    # ---------------------------------------------------------------------
 
-    
+    def launch_windowed(self):
+        """
+        Closes this fullscreen UI and reopens the DroneControlApp in a windowed mode.
+        """
+        self.flight_timer.stop()
+        self.ui_timer.stop()
+        self.timer.stop()
 
-    def emergency_landing(self):
-        """Handle emergency landing logic."""
-        logging.info("Emergency landing initiated!")
-        self.update_drone_state("Emergency Landing")
+        # Quit PyGame to free resources
+        pygame.joystick.quit()
+        pygame.quit()
 
-    def update_drone_state(self, state):
-        """Update the drone state label."""
-        self.drone_state_label.setText(state)
-        self.drone_state_label.adjustSize()
-        self.drone_state_label.move(self.width() // 2 - self.drone_state_label.width() // 2, self.height() - 100)
-
-    def close_application(self):
-        """Close the application safely."""
-        logging.info("Application closing.")
-        try:
-            self.video_thread.stop()
-        except Exception as e:
-            logging.error(f"Error stopping video thread during close: {e}")
+        # Open the windowed control
+        self.fullscreen_window = open_drone_control(self.field_path)
+        self.fullscreen_window.show()
         self.close()
 
+# ---------------------------------------------------------------------
+# Joystick Overlay Classes
+# ---------------------------------------------------------------------
+
 class DirectionalJoystick(QWidget):
+    """
+    A widget displaying a directional pad style joystick with up/down/left/right arrows.
+    x_pos, y_pos in range [-1, 1].
+    """
+
     def __init__(self, parent, label):
         super().__init__(parent)
         self.setFixedSize(200, 200)
         self.label = label
-        self.x_pos = 0.0  # Joystick horizontal axis (-1 to 1)
-        self.y_pos = 0.0  # Joystick vertical axis (-1 to 1)
+        self.x_pos = 0.0
+        self.y_pos = 0.0
 
     def paintEvent(self, event):
-        """Draw joystick position, background, and directional arrows."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Draw circular joystick area
+        # Background circle
         painter.setBrush(QColor(50, 50, 50, 150))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(0, 0, 200, 200)
 
-        # Draw directional arrows
+        # Draw directional arrows (up, down, left, right)
         arrow_color = QColor(255, 255, 255, 200)
         painter.setBrush(arrow_color)
 
@@ -624,57 +637,64 @@ class DirectionalJoystick(QWidget):
         right_arrow = QPolygon([QPoint(190, 100), QPoint(160, 90), QPoint(160, 110)])
         painter.drawPolygon(right_arrow)
 
-        # Draw joystick position
-        joystick_x = int(100 + self.x_pos * 75)  # Map -1 to 1 -> position
-        joystick_y = int(100 - self.y_pos * 75)  # Map -1 to 1 -> position
+        # Draw joystick 'knob'
+        knob_x = int(100 + self.x_pos * 75)
+        knob_y = int(100 - self.y_pos * 75)
         painter.setBrush(QColor(200, 0, 0, 200))
-        painter.drawEllipse(joystick_x - 10, joystick_y - 10, 20, 20)
+        painter.drawEllipse(knob_x - 10, knob_y - 10, 20, 20)
 
-    def update_position(self, x, y):
-        """Update joystick position (-1 to 1)."""
+    def update_position(self, x: float, y: float):
+        """Sets joystick knob position in [-1, 1] for x,y."""
         self.x_pos = x
         self.y_pos = y
         self.update()
 
 
 class CircularJoystick(QWidget):
+    """
+    A widget displaying a circular joystick with concentric rings.
+    x_pos, y_pos in range [-1, 1].
+    """
+
     def __init__(self, parent, label):
         super().__init__(parent)
         self.setFixedSize(200, 200)
         self.label = label
-        self.x_pos = 0.0  # Joystick horizontal axis (-1 to 1)
-        self.y_pos = 0.0  # Joystick vertical axis (-1 to 1)
+        self.x_pos = 0.0
+        self.y_pos = 0.0
 
     def paintEvent(self, event):
-        """Draw joystick position and concentric circles."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Draw concentric circles
         for radius in range(30, 121, 30):
-            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QColor(255, 255, 255, 100))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(100 - radius, 100 - radius, radius * 2, radius * 2)
 
-        # Draw joystick position
-        joystick_x = int(100 + self.x_pos * 75)  # Map -1 to 1 -> position
-        joystick_y = int(100 - self.y_pos * 75)  # Map -1 to 1 -> position
+        # Draw joystick knob
+        knob_x = int(100 + self.x_pos * 75)
+        knob_y = int(100 - self.y_pos * 75)
         painter.setBrush(QColor(200, 0, 0, 200))
-        painter.drawEllipse(joystick_x - 10, joystick_y - 10, 20, 20)
+        painter.drawEllipse(knob_x - 10, knob_y - 10, 20, 20)
 
-    def update_position(self, x, y):
-        """Update joystick position (-1 to 1)."""
+    def update_position(self, x: float, y: float):
+        """Sets joystick knob position in [-1, 1] for x,y."""
         self.x_pos = x
         self.y_pos = y
         self.update()
 
 
-
+# ---------------------------------------------------------------------
+# Example main guard
+# ---------------------------------------------------------------------
 # if __name__ == "__main__":
-#      try:
-#          app = QApplication(sys.argv)
-#          window = DroneOperatingPage('fields')
-#          window.show()
-#          sys.exit(app.exec())
-#      except Exception as e:
-#          logging.critical(f"Unhandled exception in main: {e}")
+#     try:
+#         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+#         app = QApplication(sys.argv)
+#         window = DroneOperatingPage('fields')
+#         window.show()
+#         sys.exit(app.exec())
+#     except Exception as e:
+#         logging.critical(f"Unhandled exception in main: {e}")
