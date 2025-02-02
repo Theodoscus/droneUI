@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QLabel, QComboBox, QPushButton, QLineEdit, QMessageBox, QSpacerItem, QSizePolicy
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QPalette, QColor
+from PyQt6.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
 
 from shared import open_drone_control, open_report_gen
 
@@ -75,7 +75,7 @@ class HomePage(QMainWindow):
         # Display a logo if available, otherwise fallback text
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_pixmap = QPixmap("logo.webp")  # Replace with your logo path
+        logo_pixmap = QPixmap("logos\logo.webp")  # Replace with your logo path
         if not logo_pixmap.isNull():
             logo_label.setPixmap(logo_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))
         else:
@@ -318,6 +318,7 @@ class HomePage(QMainWindow):
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("logos\\uop.gif"))
     window = HomePage()
     window.show()
     sys.exit(app.exec())

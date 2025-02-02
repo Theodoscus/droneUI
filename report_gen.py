@@ -1,3 +1,12 @@
+import os
+import sqlite3
+import subprocess
+import platform
+import pandas as pd
+from datetime import datetime
+import logging
+
+# PyQt6 imports
 from PyQt6.QtWidgets import (
     QMessageBox, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
     QFrame, QGridLayout, QDialog, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
@@ -5,15 +14,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QPainter
+
+# Matplotlib imports for chart display in PyQt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
-
-import os
-import sqlite3
-import subprocess
-import platform
-import pandas as pd
-from datetime import datetime
 
 # ReportLab imports for PDF generation
 from reportlab.pdfgen import canvas
@@ -29,7 +33,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 from countermeasures import CounterMeasuresWindow
 from field_progress import FieldProgressPage
 
-# Register Greek-capable font for ReportLab
+# ------------------------------------------------------------
+# Register Fonts and Constants
+# ------------------------------------------------------------
+
+# Register Greek-capable font for ReportLab PDF generation
 arial_font_path = "arial_greek.ttf"
 pdfmetrics.registerFont(TTFont("ArialGreek", arial_font_path))
 
@@ -47,52 +55,69 @@ DISEASE_TRANSLATION = {
     "Yellow Leaf Curl Virus": "Ιός του Κίτρινου Καρουλιάσματος"
 }
 
+# Configure logging for the module
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+
+# ------------------------------------------------------------
+# Drone Report Application Class
+# ------------------------------------------------------------
 
 class DroneReportApp(QMainWindow):
     """
-    A main window class for displaying and managing drone flight reports:
-      - Loads flight data from flight_data.db (SQLite).
-      - Shows disease counts in a bar chart.
-      - Displays a photo carousel of affected plants.
-      - Exports summaries to a Greek-enabled PDF.
+    Main window class for displaying and managing drone flight reports.
+    Responsibilities:
+      - Load flight data from flight_data.db (SQLite)
+      - Display disease counts via a bar chart
+      - Show a photo carousel of affected plants with additional details
+      - Export flight summaries to a Greek-enabled PDF report
     """
 
     def __init__(self, field_path: str):
         """
-        :param field_path: The path to the field folder (containing runs/, etc.).
+        Initializes the DroneReportApp window.
+
+        Args:
+            field_path (str): The path to the field folder (containing runs/ etc.)
         """
         super().__init__()
         self.setWindowTitle("Drone Flight Report")
         self.setGeometry(100, 100, 1200, 800)
 
-        # Set up field paths and ensure runs/ folder exists
+        # Set up field paths and ensure the runs/ folder exists
         self.field_path = field_path
         self.runs_folder = os.path.join(self.field_path, "runs")
         os.makedirs(self.runs_folder, exist_ok=True)
 
-        # Scrollable content
+        # Create a scrollable area for the content
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-
-        # Main container for the UI
         scroll_content = QWidget()
         self.main_layout = QVBoxLayout(scroll_content)
         scroll_area.setWidget(scroll_content)
         self.setCentralWidget(scroll_area)
 
-        # Build UI elements
+        # Build the UI components
         self.setup_ui(self.main_layout)
-        # Load newest flight data if available
+        # Load the newest flight data if available
         self.load_newest_flight_data()
 
     # ---------------------------------------------------------------------
-    # Database Utility
+    # Database Utility Method
     # ---------------------------------------------------------------------
     @staticmethod
     def open_database(db_path: str):
         """
-        Safely opens a SQLite database and returns (conn, cursor).
-        Raises an exception if the DB cannot be opened.
+        Safely opens a SQLite database and returns the connection and cursor.
+
+        Args:
+            db_path (str): Path to the SQLite database file.
+
+        Returns:
+            tuple: (connection, cursor)
         """
         try:
             conn = sqlite3.connect(db_path)
@@ -101,16 +126,15 @@ class DroneReportApp(QMainWindow):
             raise RuntimeError(f"Database error: {e}")
 
     # ---------------------------------------------------------------------
-    # UI Setup
+    # UI Setup Methods
     # ---------------------------------------------------------------------
     def setup_ui(self, main_layout: QVBoxLayout):
         """
-        Sets up the UI elements:
-          - Header with flight time, run selector, close
-          - Stats frame for disease count
-          - Bar chart area
-          - Photo carousel with disease info
-          - Footer with PDF export, flight duration, etc.
+        Sets up the overall UI elements including header, stats, chart,
+        photo carousel, and footer.
+
+        Args:
+            main_layout (QVBoxLayout): The main layout to populate with UI elements.
         """
         self.setup_header(main_layout)
         self.setup_stats_section(main_layout)
@@ -120,8 +144,13 @@ class DroneReportApp(QMainWindow):
 
     def setup_header(self, main_layout: QVBoxLayout):
         """
-        Builds the header layout containing flight time label,
-        run selector, and a close button.
+        Builds the header layout containing:
+          - Flight time label
+          - Run selector combo box
+          - Close button
+
+        Args:
+            main_layout (QVBoxLayout): Layout to add the header.
         """
         header_layout = QHBoxLayout()
 
@@ -144,8 +173,13 @@ class DroneReportApp(QMainWindow):
 
     def setup_stats_section(self, main_layout: QVBoxLayout):
         """
-        Builds a frame to display stats about the flight:
-        (Disease count, plants analyzed, affected plants).
+        Builds a frame to display flight statistics:
+          - Disease count
+          - Plants analyzed
+          - Affected plants
+
+        Args:
+            main_layout (QVBoxLayout): Layout to add the stats section.
         """
         stats_frame = QFrame()
         stats_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f5f5f5;")
@@ -167,7 +201,10 @@ class DroneReportApp(QMainWindow):
 
     def setup_chart_section(self, main_layout: QVBoxLayout):
         """
-        Builds a frame containing a matplotlib bar chart.
+        Builds a section containing a matplotlib bar chart.
+
+        Args:
+            main_layout (QVBoxLayout): Layout to add the chart section.
         """
         self.figure, self.ax = plt.subplots()
         self.canvas = FigureCanvas(self.figure)
@@ -175,15 +212,16 @@ class DroneReportApp(QMainWindow):
         chart_frame = QFrame()
         chart_frame.setStyleSheet("border: 1px solid gray; padding: 10px;")
         chart_frame.setMinimumHeight(500)
-
         chart_layout = QVBoxLayout(chart_frame)
         chart_layout.addWidget(self.canvas)
         main_layout.addWidget(chart_frame)
 
     def setup_image_section(self, main_layout: QVBoxLayout):
         """
-        Builds a section to display affected plant photos, along with
-        disease info labels and navigation buttons.
+        Builds a section to display plant photos (photo carousel) and related disease info.
+
+        Args:
+            main_layout (QVBoxLayout): Layout to add the image section.
         """
         image_frame = QFrame()
         image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
@@ -194,6 +232,7 @@ class DroneReportApp(QMainWindow):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_layout.addWidget(self.image_label)
 
+        # Information frame for disease details
         info_frame = QFrame()
         info_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f1f1f1;")
         info_layout = QVBoxLayout(info_frame)
@@ -225,7 +264,7 @@ class DroneReportApp(QMainWindow):
 
         main_layout.addWidget(image_frame)
 
-        # Navigation (Prev/Next) buttons under the image
+        # Navigation buttons for the photo carousel
         nav_buttons_layout = QHBoxLayout()
         prev_button = QPushButton("Προηγούμενο")
         prev_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 5px;")
@@ -239,13 +278,13 @@ class DroneReportApp(QMainWindow):
 
         image_layout.addLayout(nav_buttons_layout)
 
-        # Button: open flight video
+        # Button to open the flight video in an external player
         external_player_button = QPushButton("Αναπαραγωγή Καταγραφής Πτήσης")
         external_player_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         external_player_button.clicked.connect(self.open_video_in_external_player)
         main_layout.addWidget(external_player_button)
 
-        # Button: open photos folder
+        # Button to open the photos folder
         photos_button = QPushButton("Άνοιγμα Φακέλου Φωτογραφιών", self)
         photos_button.setStyleSheet("font-size: 14px; background-color: #007BFF; color: white; padding: 10px;")
         photos_button.clicked.connect(self.open_photos_folder)
@@ -253,8 +292,14 @@ class DroneReportApp(QMainWindow):
 
     def setup_footer(self, main_layout: QVBoxLayout):
         """
-        Builds the footer with PDF export, flight duration, and a countermeasures button.
-        Adds a final button for viewing field progress.
+        Builds the footer containing:
+          - PDF export button
+          - Flight duration label
+          - Countermeasures button
+          - Field progress view button
+
+        Args:
+            main_layout (QVBoxLayout): Layout to add the footer.
         """
         footer_layout = QHBoxLayout()
 
@@ -281,16 +326,15 @@ class DroneReportApp(QMainWindow):
         main_layout.addWidget(progress_button)
 
     # ---------------------------------------------------------------------
-    # Flight Data Loading
+    # Flight Data Loading Methods
     # ---------------------------------------------------------------------
-
     def load_newest_flight_data(self):
         """
-        Loads the newest run in 'runs/' by timestamp. 
-        Does nothing if no runs exist.
+        Loads the newest flight data folder (by timestamp) from the runs/ directory.
+        If no run folders exist, logs the information.
         """
         if not os.path.exists(self.runs_folder):
-            print(f"No runs directory found in {self.runs_folder}.")
+            logging.info("No runs directory found in %s.", self.runs_folder)
             return
 
         flight_folders = [
@@ -298,21 +342,24 @@ class DroneReportApp(QMainWindow):
             if os.path.isdir(os.path.join(self.runs_folder, d)) and d.startswith("run_")
         ]
         if not flight_folders:
-            print("No flight data found.")
+            logging.info("No flight data found.")
             return
 
         flight_folders.sort(reverse=True)
         newest_run = os.path.join(self.runs_folder, flight_folders[0])
-        print(f"Loading data from: {newest_run}")
+        logging.info("Loading data from: %s", newest_run)
         self.load_results(newest_run)
 
     def list_previous_runs(self):
         """
-        Returns a list of run folders in descending order, each formatted as 'Πτήση: dd/mm/yyyy hh:mm:ss'.
-        Populates self.run_name_mapping to map displayed name -> folder name.
+        Lists previous flight run folders (sorted descending by timestamp) and maps
+        a user-friendly display name to the folder name.
+
+        Returns:
+            list: A list of run display names.
         """
         if not os.path.exists(self.runs_folder):
-            print(f"No runs found in {self.runs_folder}")
+            logging.info("No runs found in %s.", self.runs_folder)
             return []
 
         runs = [
@@ -324,20 +371,20 @@ class DroneReportApp(QMainWindow):
 
         for run in runs:
             try:
-                parts = run.split("_")  # ["run", "YYYYMMDD", "HHMMSS"]
+                parts = run.split("_")  # Expected format: ["run", "YYYYMMDD", "HHMMSS"]
                 timestamp = parts[1] + parts[2]
                 flight_datetime = datetime.strptime(timestamp, "%Y%m%d%H%M%S")
                 display_name = f"Πτήση: {flight_datetime.strftime('%d/%m/%Y %H:%M:%S')}"
                 self.run_name_mapping[display_name] = run
             except (IndexError, ValueError):
-                print(f"Invalid folder name format: {run}")
+                logging.warning("Invalid folder name format: %s", run)
                 continue
         return list(self.run_name_mapping.keys())
 
     def load_selected_run(self):
         """
-        Loads the run selected from the run_selector combo.
-        Shows a warning if invalid.
+        Loads the run selected from the run_selector combo box.
+        Displays warnings if no valid run is selected.
         """
         selected_run = self.run_selector.currentText()
         if not selected_run:
@@ -361,18 +408,20 @@ class DroneReportApp(QMainWindow):
 
     def load_results(self, flight_folder):
         """
-        Loads flight data from flight_data.db in flight_folder, populates chart & stats,
-        sets up the photo carousel if diseased photos exist.
+        Loads flight results from flight_data.db within the provided flight folder.
+        Updates charts, stats, and photo carousel accordingly.
+
+        Args:
+            flight_folder (str): The folder path containing flight_data.db and photos/.
         """
         self.current_flight_folder = flight_folder
         db_path = os.path.join(flight_folder, "flight_data.db")
         photos_folder = os.path.join(flight_folder, "photos")
 
         if not os.path.exists(db_path):
-            print(f"Database not found at: {db_path}")
+            logging.info("Database not found at: %s", db_path)
             return
 
-        # Safely open the DB, query, and close
         try:
             conn = sqlite3.connect(db_path)
             df_all = pd.read_sql_query("SELECT * FROM flight_results", conn)
@@ -383,11 +432,11 @@ class DroneReportApp(QMainWindow):
             if 'conn' in locals():
                 conn.close()
 
-        # For each plant, keep the highest-confidence classification
         if df_all.empty:
             QMessageBox.information(self, "No Data", "No flight results found in the database.")
             return
 
+        # Keep highest-confidence row per plant (ID)
         df_all = df_all.loc[df_all.groupby("ID")["Confidence"].idxmax()]
 
         disease_counts = df_all["Class"].value_counts()
@@ -397,11 +446,8 @@ class DroneReportApp(QMainWindow):
         total_plants = df_all["ID"].nunique()
         affected_plants = total_plants - disease_counts["Healthy"]
 
-        # Number of distinct diseases (excluding healthy)
-        if "Healthy" in disease_counts:
-            unique_diseases = len(disease_counts) - 1
-        else:
-            unique_diseases = len(disease_counts)
+        # Calculate the number of distinct diseases (excluding healthy)
+        unique_diseases = len(disease_counts) - (1 if "Healthy" in disease_counts else 0)
 
         self.update_flight_data(
             flight_time=flight_folder.split("_"),
@@ -410,46 +456,49 @@ class DroneReportApp(QMainWindow):
             affected_plants=affected_plants,
         )
 
-        # Draw the bar chart
+        # Draw the bar chart using the disease counts
         self.draw_chart(disease_counts.index.tolist(), disease_counts.values.tolist())
 
-        # Load photo carousel
+        # Load the photo carousel
         self.load_photos(photos_folder, db_path)
 
-        # If flight duration is present
+        # Update flight duration if available
         if "FlightDuration" in df_all.columns:
             duration = df_all["FlightDuration"].iloc[0]
             self.flight_duration_label.setText(f"Διάρκεια Πτήσης: {duration}")
 
     # ---------------------------------------------------------------------
-    # Photo Carousel
+    # Photo Carousel Methods
     # ---------------------------------------------------------------------
-
     def load_photos(self, photos_folder: str, db_path: str):
         """
-        Loads photos of plants with highest-confidence classification != Healthy.
-        Sets up the photo carousel if any diseased photos exist.
+        Loads photos of plants whose highest-confidence classification is not "Healthy".
+        Sets up the photo carousel if affected photos exist.
+
+        Args:
+            photos_folder (str): The folder containing plant photos.
+            db_path (str): Path to the flight_data.db file.
         """
         if not os.path.exists(photos_folder):
-            print(f"Photos folder not found: {photos_folder}")
+            logging.info("Photos folder not found: %s", photos_folder)
             self.placeholder_image.setText("No photos available.")
             return
 
         if not os.path.exists(db_path):
-            print(f"Database not found: {db_path}")
+            logging.info("Database not found: %s", db_path)
             self.placeholder_image.setText("No results available.")
             return
 
         try:
             conn = sqlite3.connect(db_path)
-            q = """
+            query = """
                 SELECT ID,
                        MAX(CASE WHEN Class = 'Healthy' THEN Confidence ELSE 0 END) AS HealthyConfidence,
                        MAX(CASE WHEN Class != 'Healthy' THEN Confidence ELSE 0 END) AS NonHealthyConfidence
                 FROM flight_results
                 GROUP BY ID
             """
-            df = pd.read_sql_query(q, conn)
+            df = pd.read_sql_query(query, conn)
         except sqlite3.Error as e:
             QMessageBox.critical(self, "Database Error", f"Error reading DB for diseased photos: {e}")
             return
@@ -461,7 +510,7 @@ class DroneReportApp(QMainWindow):
             self.placeholder_image.setText("No flight results found.")
             return
 
-        # Keep only IDs where NonHealthyConfidence > HealthyConfidence
+        # Keep only IDs where non-healthy confidence exceeds healthy confidence
         affected_ids = df[df["NonHealthyConfidence"] > df["HealthyConfidence"]]["ID"].tolist()
 
         photo_files = [
@@ -479,7 +528,8 @@ class DroneReportApp(QMainWindow):
 
     def update_carousel_image(self):
         """
-        Updates the displayed photo in the carousel, along with disease details from DB.
+        Updates the displayed image in the photo carousel along with
+        the associated disease details from the database.
         """
         if not hasattr(self, "photo_files") or not self.photo_files:
             return
@@ -489,20 +539,19 @@ class DroneReportApp(QMainWindow):
             self.placeholder_image.setText("Photo file not found.")
             return
 
-        # Get plant ID from the photo filename
+        # Extract plant ID from photo filename
         try:
             plant_id = int(photo_file.split("_ID")[-1].replace(".jpg", ""))
         except ValueError:
             self.placeholder_image.setText("Invalid photo filename format.")
             return
 
-        # Query DB for that plant ID
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
         try:
             conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute("SELECT Class, Confidence FROM flight_results WHERE ID=? ORDER BY Confidence DESC LIMIT 1", (plant_id,))
-            row = c.fetchone()
+            cursor = conn.cursor()
+            cursor.execute("SELECT Class, Confidence FROM flight_results WHERE ID=? ORDER BY Confidence DESC LIMIT 1", (plant_id,))
+            row = cursor.fetchone()
         except sqlite3.Error as e:
             QMessageBox.critical(self, "Database Error", f"Error reading classification data: {e}")
             return
@@ -528,7 +577,12 @@ class DroneReportApp(QMainWindow):
             self.placeholder_image.setPixmap(pixmap.scaled(self.placeholder_image.size(), Qt.AspectRatioMode.KeepAspectRatio))
 
     def navigate_photos(self, direction: str):
-        """Moves to the next or previous photo in the carousel."""
+        """
+        Moves to the next or previous photo in the carousel.
+
+        Args:
+            direction (str): "next" or "prev" to navigate through photos.
+        """
         if not hasattr(self, "photo_files") or not self.photo_files:
             return
 
@@ -539,12 +593,16 @@ class DroneReportApp(QMainWindow):
         self.update_carousel_image()
 
     # ---------------------------------------------------------------------
-    # Chart Visualization
+    # Chart Visualization Methods
     # ---------------------------------------------------------------------
     def draw_chart(self, categories=None, values=None):
         """
-        Draws a bar chart of disease classes vs. counts.
-        Ensures 'Healthy' is included, translates to Greek, annotates bars.
+        Draws a bar chart of disease categories versus counts.
+        Ensures 'Healthy' is included, translates labels to Greek, and annotates bars.
+
+        Args:
+            categories (list): List of disease category names.
+            values (list): List of counts corresponding to each category.
         """
         if categories is None or values is None:
             categories, values = [], []
@@ -581,10 +639,19 @@ class DroneReportApp(QMainWindow):
         self.canvas.draw()
 
     # ---------------------------------------------------------------------
-    # Updating Flight Data Stats
+    # Flight Data Stats Update Method
     # ---------------------------------------------------------------------
     def update_flight_data(self, flight_time, diseases, plants_analyzed, affected_plants):
-        """Updates labels for flight info (time, disease count, etc.) and toggles the countermeasures button."""
+        """
+        Updates the flight information labels and toggles the countermeasures button
+        based on the number of diseases detected.
+
+        Args:
+            flight_time (list): Split parts of the flight folder name.
+            diseases (int): Number of distinct disease types detected.
+            plants_analyzed (int): Total number of plants analyzed.
+            affected_plants (int): Number of plants affected (non-healthy).
+        """
         try:
             combined_time = f"{flight_time[1]}_{flight_time[2]}"
             dt = datetime.strptime(combined_time, "%Y%m%d_%H%M%S").strftime("%d/%m/%Y %H:%M:%S")
@@ -604,14 +671,14 @@ class DroneReportApp(QMainWindow):
             self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
 
     # ---------------------------------------------------------------------
-    # PDF Export
+    # PDF Export Methods
     # ---------------------------------------------------------------------
     def export_to_pdf(self):
         """
-        Exports a PDF report containing:
+        Exports a PDF report including:
           - Flight info (date/time, duration)
-          - Bar chart of disease classes
-          - Table of only diseased plants
+          - A bar chart of disease classes
+          - A table listing only diseased plants with photos
         """
         if not hasattr(self, "current_flight_folder") or not self.current_flight_folder:
             QMessageBox.warning(self, "Error", "Δεν έχετε επιλέξει πτήση. Φορτώστε δεδομένα πριν την εξαγωγή.")
@@ -653,14 +720,14 @@ class DroneReportApp(QMainWindow):
             QMessageBox.warning(self, "No Data", "No flight results found for PDF export.")
             return
 
-        # Keep highest confidence row per ID
+        # Keep only the highest-confidence record per plant (ID)
         df_all = df_all.loc[df_all.groupby("ID")["Confidence"].idxmax()]
 
         total_plants = df_all["ID"].nunique()
         class_counts = df_all["Class"].value_counts()
         diseased_df = df_all[df_all["Class"] != "Healthy"]
 
-        # Save chart for PDF
+        # Save the chart image temporarily for PDF insertion
         chart_filepath = os.path.join(self.current_flight_folder, "temp_chart.png")
         self.save_flight_chart_all_classes(class_counts, chart_filepath)
 
@@ -673,11 +740,11 @@ class DroneReportApp(QMainWindow):
         greek_title_style = styles["Title"]
         greek_title_style.fontName = "ArialGreek"
 
-        # Title
+        # Add title
         elements.append(Paragraph("Αναφορά Πτήσης (Flight Report)", greek_title_style))
         elements.append(Spacer(1, 12))
 
-        # Flight summary
+        # Flight summary information
         flight_info = f"""
         <b>Χωράφι:</b> {field_name}<br/>
         <b>Ημερομηνία Πτήσης:</b> {flight_date_text}<br/>
@@ -687,7 +754,7 @@ class DroneReportApp(QMainWindow):
         elements.append(Paragraph(flight_info, greek_normal_style))
         elements.append(Spacer(1, 12))
 
-        # Insert chart
+        # Insert the chart image
         if os.path.exists(chart_filepath):
             chart_img = Image(chart_filepath, width=6 * inch, height=4 * inch)
             elements.append(chart_img)
@@ -696,7 +763,7 @@ class DroneReportApp(QMainWindow):
             elements.append(Paragraph("Το γράφημα δεν είναι διαθέσιμο.", greek_normal_style))
             elements.append(Spacer(1, 12))
 
-        # Table of only diseased plants
+        # Build the table of diseased plants
         table_data = [[
             Paragraph("ID Φυτού", greek_normal_style),
             Paragraph("Ασθένεια / Κατάσταση", greek_normal_style),
@@ -751,9 +818,15 @@ class DroneReportApp(QMainWindow):
 
     def get_field_name_from_folder(self, run_folder_path: str) -> str:
         """
-        Extracts the field folder name from a run path like:
+        Extracts the field folder name from a run folder path. For example, given:
           /.../fields/<field_name>/runs/run_YYYYMMDD_HHMMSS
-        Goes up two directories to get <field_name>.
+        it retrieves <field_name>.
+
+        Args:
+            run_folder_path (str): The full run folder path.
+
+        Returns:
+            str: The field name.
         """
         runs_dir = os.path.dirname(run_folder_path)
         field_dir = os.path.dirname(runs_dir)
@@ -761,8 +834,12 @@ class DroneReportApp(QMainWindow):
 
     def save_flight_chart_all_classes(self, class_counts: pd.Series, filepath: str):
         """
-        Creates a bar chart (including 'Healthy'), saves as an image.
-        Y-axis max is set to (max + 50).
+        Creates and saves a bar chart (including 'Healthy') representing the flight's class counts.
+        The Y-axis maximum is set to max + 50.
+
+        Args:
+            class_counts (pd.Series): Series with class counts.
+            filepath (str): The file path to save the chart image.
         """
         if "Healthy" not in class_counts.index:
             class_counts["Healthy"] = 0
@@ -796,12 +873,12 @@ class DroneReportApp(QMainWindow):
         plt.close(fig)
 
     # ---------------------------------------------------------------------
-    # External Buttons & Windows
+    # External Buttons & Windows Methods
     # ---------------------------------------------------------------------
     def show_countermeasures(self):
         """
-        Opens a dialog with possible countermeasures for all non-healthy diseases
-        found in the current flight.
+        Opens a dialog displaying countermeasures for non-healthy diseases
+        detected in the current flight.
         """
         if not getattr(self, "current_flight_folder", None):
             QMessageBox.warning(self, "Σφάλμα", "No flight folder loaded.")
@@ -843,18 +920,17 @@ class DroneReportApp(QMainWindow):
             QMessageBox.information(self, "Δεν Βρέθηκαν Ασθένειες", "Δεν ανιχνεύθηκαν μη-υγιή φυτά.")
             return
 
-        # Inside show_countermeasures in report_gen.py:
+        # Open the countermeasures window (from countermeasures.py)
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
-
-        # Pass db_path as the second argument, plus 'self' as the parent if you want:
         cm_window = CounterMeasuresWindow(diseases_gr, db_path, parent=self)
         cm_window.exec()
 
-
     def open_video_in_external_player(self):
-        """Opens processed video in default OS media player."""
+        """
+        Opens the processed flight video in the OS default media player.
+        """
         if not getattr(self, "current_flight_folder", None):
-            print("No flight data loaded.")
+            logging.info("No flight data loaded.")
             return
 
         exts = [".mp4", ".mov", ".avi"]
@@ -866,7 +942,7 @@ class DroneReportApp(QMainWindow):
                 break
 
         if not video_path:
-            print("Flight video not found.")
+            logging.info("Flight video not found.")
             return
 
         try:
@@ -877,12 +953,14 @@ class DroneReportApp(QMainWindow):
             elif platform.system() == "Linux":
                 subprocess.run(["xdg-open", video_path])
             else:
-                print("Unsupported OS.")
+                logging.warning("Unsupported OS.")
         except Exception as e:
-            print(f"Error opening video: {e}")
+            logging.error("Error opening video: %s", e)
 
     def open_photos_folder(self):
-        """Opens the photos folder for the selected run in the OS file explorer."""
+        """
+        Opens the photos folder for the selected flight run in the OS file explorer.
+        """
         selected_run = self.run_selector.currentText()
         if not selected_run:
             QMessageBox.warning(self, "Σφάλμα", "Παρακαλώ επιλέξτε πτήση.")
@@ -911,36 +989,50 @@ class DroneReportApp(QMainWindow):
             QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία ανοίγματος φακέλου: {e}")
 
     def open_field_progress_page(self):
-        """Opens the 'FieldProgressPage' to show a health/time chart for the field."""
+        """
+        Opens the FieldProgressPage window to display a health/time chart for the field.
+        """
         self.progress_page = FieldProgressPage(self.field_path)
         self.progress_page.show()
 
     # ---------------------------------------------------------------------
-    # Fullscreen Zoomable Image
+    # Fullscreen Zoomable Image Methods
     # ---------------------------------------------------------------------
     def show_fullscreen_image(self):
-        """Shows the current photo in a separate zoomable dialog."""
+        """
+        Displays the current photo from the carousel in a separate zoomable dialog.
+        """
         if not hasattr(self, "photo_files") or not self.photo_files:
             return
 
         photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])
         if not os.path.exists(photo_file):
-            print("Photo file not found or invalid.")
+            logging.info("Photo file not found or invalid.")
             return
 
         try:
             dlg = ZoomableImageDialog(photo_file, self)
             dlg.exec()
         except ValueError as e:
-            print(e)
+            logging.error("Error displaying fullscreen image: %s", e)
 
-
+# ------------------------------------------------------------
+# Zoomable Image Dialog Class
+# ------------------------------------------------------------
 class ZoomableImageDialog(QDialog):
     """
-    Displays an image with zoom & pan. A QSlider adjusts the zoom level (50–200%).
+    A dialog that displays an image with zoom and pan capabilities.
+    A QSlider adjusts the zoom level from 50% to 200%.
     """
 
     def __init__(self, image_path: str, parent=None):
+        """
+        Initializes the ZoomableImageDialog with the specified image.
+
+        Args:
+            image_path (str): Path to the image file.
+            parent: Parent widget.
+        """
         super().__init__(parent)
         self.setWindowTitle("Image Viewer")
         self.image_path = image_path
@@ -960,7 +1052,7 @@ class ZoomableImageDialog(QDialog):
         layout.addWidget(self.graphics_view)
 
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal, self)
-        self.zoom_slider.setRange(50, 200)  # 50% to 200%
+        self.zoom_slider.setRange(50, 200)  # Zoom range: 50% to 200%
         self.zoom_slider.setValue(150)
         self.zoom_slider.valueChanged.connect(self.zoom_image)
         layout.addWidget(self.zoom_slider)
@@ -973,7 +1065,12 @@ class ZoomableImageDialog(QDialog):
         self.setMinimumSize(self.pixmap.width(), self.pixmap.height())
 
     def zoom_image(self, value: int):
-        """Adjust the QGraphicsView scale based on the slider's value."""
+        """
+        Adjusts the zoom level of the image in the QGraphicsView based on the slider value.
+
+        Args:
+            value (int): Zoom percentage (50–200).
+        """
         scale_factor = value / 100.0
         self.graphics_view.resetTransform()
         self.graphics_view.scale(scale_factor, scale_factor)
