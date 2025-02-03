@@ -686,15 +686,3 @@ class CircularJoystick(QWidget):
         self.update()
 
 
-# ---------------------------------------------------------------------
-# Example main guard
-# ---------------------------------------------------------------------
-# if __name__ == "__main__":
-#     try:
-#         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-#         app = QApplication(sys.argv)
-#         window = DroneOperatingPage('fields')
-#         window.show()
-#         sys.exit(app.exec())
-#     except Exception as e:
-#         logging.critical(f"Unhandled exception in main: {e}")

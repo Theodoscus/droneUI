@@ -44,8 +44,8 @@ pdfmetrics.registerFont(TTFont("ArialGreek", arial_font_path))
 # Dictionary for translating disease classes from English to Greek
 DISEASE_TRANSLATION = {
     "Healthy": "Υγιές",
-    "Early blight": "Αλτερναρίωση",
-    "Late blight": "Περονόσπορος",
+    "Early Blight": "Αλτερναρίωση",
+    "Late Blight": "Περονόσπορος",
     "Bacterial Spot": "Βακτηριακή Κηλίδωση",
     "Leaf Mold": "Κλαδοσπορίωση",
     "Leaf_Miner": "Φυλλοκνίστης",
@@ -919,7 +919,6 @@ class DroneReportApp(QMainWindow):
         if not diseases_gr:
             QMessageBox.information(self, "Δεν Βρέθηκαν Ασθένειες", "Δεν ανιχνεύθηκαν μη-υγιή φυτά.")
             return
-
         # Open the countermeasures window (from countermeasures.py)
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
         cm_window = CounterMeasuresWindow(diseases_gr, db_path, parent=self)
