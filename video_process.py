@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime
 from time import time, strftime, gmtime
 import logging
+from typing import Tuple
 
 from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt
@@ -148,11 +149,18 @@ def save_tracking_data_to_db(cursor, tracking_data: list, duration: str) -> None
     except sqlite3.Error as e:
         raise RuntimeError(f"Error inserting tracking data: {e}")
 
-def process_frame(results, frames, frame_start_index: int,
-                  tracking_data: list, saved_ids: set, photo_folder: str) -> list:
+def process_frame(
+    results, 
+    frames, 
+    frame_start_index: int,
+    tracking_data: list, 
+    saved_ids: set, 
+    photo_folder: str
+) -> Tuple[list, list]:
     """
     Processes a batch of frames by annotating them with YOLO detection results, appending
     tracking data for database storage, and saving a cropped image for each unique object ID.
+    Also counts the number of affected (non-Healthy) detections per frame.
 
     Args:
         results (list): YOLO detection/tracking results for the batch.
@@ -163,7 +171,8 @@ def process_frame(results, frames, frame_start_index: int,
         photo_folder (str): Folder path where cropped object photos are saved.
 
     Returns:
-        list: The list of annotated frames.
+        tuple: (annotated_frames, detection_info) where detection_info is a list of tuples
+               (frame_index, affected_count, frame_copy).
     """
     # Define a local color mapping for drawing bounding boxes
     class_colors = {
@@ -180,9 +189,11 @@ def process_frame(results, frames, frame_start_index: int,
     }
 
     annotated_frames = []
+    detection_info = []  # List to store (frame_index, affected_count, frame copy)
 
     for i, (result, frame) in enumerate(zip(results, frames)):
         current_frame_index = frame_start_index + i
+        affected_count = 0  # Count non-Healthy detections
 
         for box_result in result.boxes:
             # Skip objects that are not tracked (no ID)
@@ -195,6 +206,10 @@ def process_frame(results, frames, frame_start_index: int,
             class_id = int(box_result.cls[0])
             track_id = int(box_result.id[0])
             class_name = result.names.get(class_id, "Unknown")
+
+            # Count affected (non-Healthy) detections
+            if class_name.lower() != "healthy":
+                affected_count += 1
 
             # Determine bounding box color based on class name
             box_color = class_colors.get(class_name, (255, 255, 255))
@@ -232,8 +247,10 @@ def process_frame(results, frames, frame_start_index: int,
             )
 
         annotated_frames.append(frame)
+        # Save detection info (a copy of the frame is stored to avoid later modifications)
+        detection_info.append((current_frame_index, affected_count, frame.copy()))
 
-    return annotated_frames
+    return annotated_frames, detection_info
 
 def save_object_photo(frame, bbox: list, track_id: int, class_name: str, photo_folder: str) -> None:
     """
@@ -256,6 +273,30 @@ def save_object_photo(frame, bbox: list, track_id: int, class_name: str, photo_f
         cv2.imwrite(photo_path, cropped_object)
     except Exception as e:
         logging.error("Error saving object photo: %s", e)
+
+def save_infected_frames(detection_info: list, output_folder: str, top_n: int = 5) -> None:
+    """
+    Saves the top N frames (with the highest number of affected detections)
+    to a subfolder called 'infected_frames' inside output_folder.
+    
+    Args:
+        detection_info (list): List of tuples (frame_index, affected_count, frame).
+        output_folder (str): The output folder where the run data is saved.
+        top_n (int): Number of top frames to save.
+    """
+    infected_folder = os.path.join(output_folder, "infected_frames")
+    os.makedirs(infected_folder, exist_ok=True)
+    
+    # Sort the detection info by affected_count in descending order
+    sorted_info = sorted(detection_info, key=lambda x: x[1], reverse=True)
+    
+    for idx, (frame_index, affected_count, frame) in enumerate(sorted_info[:top_n]):
+        filename = f"infected_frame_{frame_index}_count_{affected_count}.jpg"
+        filepath = os.path.join(infected_folder, filename)
+        try:
+            cv2.imwrite(filepath, frame)
+        except Exception as e:
+            logging.error("Error saving infected frame %s: %s", filepath, e)
 
 # ------------------------------------------------------------
 # Video Processing Function
@@ -313,6 +354,7 @@ def process_video(
 
     saved_ids = set()       # To track which object IDs have been saved as photos
     tracking_data = []      # List to hold tracking data for DB insertion
+    all_detection_info = [] # List to collect detection info from all frames
 
     # Initialize the loading/progress dialog using PyQt6
     app = QApplication.instance() or QApplication(sys.argv)
@@ -340,12 +382,13 @@ def process_video(
         # Perform YOLO tracking on the current batch of frames
         results = track_and_detect_batch(model, batch_frames)
 
-        # Process frames: annotate and collect tracking data
-        annotated_frames = process_frame(
+        # Process frames: annotate and collect tracking & detection info
+        annotated_frames, detection_info = process_frame(
             results, batch_frames,
             frame_index, tracking_data, saved_ids,
             photo_folder
         )
+        all_detection_info.extend(detection_info)
 
         # Write each annotated frame to the output video file
         for ann_frame in annotated_frames:
@@ -374,6 +417,9 @@ def process_video(
         app.processEvents()
 
         frame_index += frames_processed
+
+    # After processing all frames, save the top infected frames
+    save_infected_frames(all_detection_info, output_folder, top_n=5)
 
     # Cleanup: close the progress dialog, commit and close DB, and release video resources
     loading_dialog.close()

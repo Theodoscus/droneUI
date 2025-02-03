@@ -196,6 +196,13 @@ class DroneReportApp(QMainWindow):
         stats_layout.addWidget(self.disease_count_label, 0, 0)
         stats_layout.addWidget(self.plants_analyzed_label, 0, 1)
         stats_layout.addWidget(self.affected_plants_label, 0, 2)
+        
+        # New: Field Status Label
+        self.field_status_label = QLabel("Κατάσταση Χωραφιού: --")
+        self.field_status_label.setStyleSheet("font-size: 14px; color: red;")
+        self.field_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Span the label across three columns
+        stats_layout.addWidget(self.field_status_label, 1, 0, 1, 3)
 
         main_layout.addWidget(stats_frame)
 
@@ -285,10 +292,16 @@ class DroneReportApp(QMainWindow):
         main_layout.addWidget(external_player_button)
 
         # Button to open the photos folder
-        photos_button = QPushButton("Άνοιγμα Φακέλου Φωτογραφιών", self)
+        photos_button = QPushButton("Φωτογραφίες Επηρεασμένων Φύλλων", self)
         photos_button.setStyleSheet("font-size: 14px; background-color: #007BFF; color: white; padding: 10px;")
         photos_button.clicked.connect(self.open_photos_folder)
         main_layout.addWidget(photos_button)
+        
+        # Button to open the photos folder
+        areas_button = QPushButton("Φωτογραφίες Επηρεασμένων Περιοχών", self)
+        areas_button.setStyleSheet("font-size: 14px; background-color: #007BFF; color: white; padding: 10px;")
+        areas_button.clicked.connect(self.open_areas_folder)
+        main_layout.addWidget(areas_button)
 
     def setup_footer(self, main_layout: QVBoxLayout):
         """
@@ -320,7 +333,7 @@ class DroneReportApp(QMainWindow):
 
         main_layout.addLayout(footer_layout)
 
-        progress_button = QPushButton("View Field Health Progress")
+        progress_button = QPushButton("Πρόοδος Υγείας Χωραφιού")
         progress_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
         progress_button.clicked.connect(self.open_field_progress_page)
         main_layout.addWidget(progress_button)
@@ -644,7 +657,12 @@ class DroneReportApp(QMainWindow):
     def update_flight_data(self, flight_time, diseases, plants_analyzed, affected_plants):
         """
         Updates the flight information labels and toggles the countermeasures button
-        based on the number of diseases detected.
+        based on the number of diseases detected. Also updates the field status label
+        based on the ratio of affected plants to total plants with intermediate statuses:
+        - Normal (<20% affected)
+        - Small Danger (20%-40%)
+        - Moderate (40%-50%)
+        - Critical (≥50%)
 
         Args:
             flight_time (list): Split parts of the flight folder name.
@@ -663,12 +681,33 @@ class DroneReportApp(QMainWindow):
         self.plants_analyzed_label.setText(f"Φύλλα που αναλύθηκαν: {plants_analyzed}")
         self.affected_plants_label.setText(f"Επηρεασμένα φύλλα: {affected_plants}")
 
+        # Compute the affected ratio and decide the status and style
+        if plants_analyzed > 0:
+            affected_ratio = affected_plants / plants_analyzed
+        else:
+            affected_ratio = 0
+
+        if affected_ratio < 0.2:
+            status_text = "Κανονική"
+            bg_color = "green"
+        elif affected_ratio < 0.5:
+            status_text = "Μέτρια"
+            bg_color = "orange"
+        else:
+            status_text = "Σοβαρή"
+            bg_color = "red"
+
+        self.field_status_label.setText(f"Κατάσταση Χωραφιού: {status_text}")
+        self.field_status_label.setStyleSheet(f"font-size: 14px; background-color: {bg_color}; color: white;")
+
+        # Enable or disable the countermeasures button
         if diseases == 0:
             self.countermeasures_button.setEnabled(False)
             self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #e0e0e0; color: gray; padding: 10px;")
         else:
             self.countermeasures_button.setEnabled(True)
             self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
+
 
     # ---------------------------------------------------------------------
     # PDF Export Methods
@@ -973,6 +1012,37 @@ class DroneReportApp(QMainWindow):
         photos_dir = os.path.join(self.field_path, "runs", raw_run_name, "photos")
         if not os.path.exists(photos_dir):
             QMessageBox.warning(self, "Σφάλμα", "Φάκελος φωτογραφιών δεν βρέθηκε.")
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(photos_dir)
+            elif platform.system() == "Darwin":
+                subprocess.run(["open", photos_dir])
+            elif platform.system() == "Linux":
+                subprocess.run(["xdg-open", photos_dir])
+            else:
+                QMessageBox.warning(self, "Σφάλμα", "OS δεν υποστηρίζεται.")
+        except Exception as e:
+            QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία ανοίγματος φακέλου: {e}")
+            
+    def open_areas_folder(self):
+        """
+        Opens the photos folder for the selected flight run in the OS file explorer.
+        """
+        selected_run = self.run_selector.currentText()
+        if not selected_run:
+            QMessageBox.warning(self, "Σφάλμα", "Παρακαλώ επιλέξτε πτήση.")
+            return
+
+        raw_run_name = getattr(self, "run_name_mapping", {}).get(selected_run, None)
+        if not raw_run_name:
+            QMessageBox.warning(self, "Σφάλμα", "Η επιλεγμένη πτήση δεν εντοπίστηκε.")
+            return
+
+        photos_dir = os.path.join(self.field_path, "runs", raw_run_name, "infected_frames")
+        if not os.path.exists(photos_dir):
+            QMessageBox.warning(self, "Σφάλμα", "Φάκελος επηρεασμένων περιοχών δεν βρέθηκε.")
             return
 
         try:
