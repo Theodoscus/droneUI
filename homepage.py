@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
 
-from shared import open_drone_control, open_report_gen
+from shared import open_drone_control, open_report_gen, open_real_drone_control
 
 
 FIELDS_FOLDER = "fields"
@@ -268,7 +268,7 @@ class HomePage(QMainWindow):
             return
 
         # Launch drone control
-        self.drone_control_app = open_drone_control(field_path)
+        self.drone_control_app = open_real_drone_control(field_path)
         self.drone_control_app.show()
         self.close()
 
