@@ -464,20 +464,33 @@ class DroneControlApp(QMainWindow):
         if not self.ping_drone("192.168.10.1"):
             self.consecutive_ping_failures += 1
             print(f"Ping failed ({self.consecutive_ping_failures} consecutive failure(s)).")
-            # Only disconnect if there are 3 consecutive failures.
+            # After 3 consecutive failures, update the UI/state but do not call disconnect_drone()
             if self.consecutive_ping_failures >= 3:
-                print("Multiple ping failures: Drone not reachable. Marking as disconnected.")
-                self.disconnect_drone()
+                print("Multiple ping failures: Drone not reachable. Marking as disconnected in UI.")
+                # Update internal state without sending any commands to the drone.
+                self.is_connected = False
+                # Update the connection status label.
+                self.connection_status.setText("DISCONNECTED")
+                self.connection_status.setStyleSheet(
+                    "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
+                )
+                # Change the toggle button to "Connect"
+                self.connect_toggle_button.setText("Connect")
+                self.connect_toggle_button.setStyleSheet(
+                    "font-size: 16px; padding: 10px; background-color: green; color: white;"
+                )
+                # Show a warning that the drone has been lost.
                 self.connection_notification_label.setText("Drone disconnected from WiFi!")
                 self.connection_notification_label.setVisible(True)
         else:
-            # Reset failure counter on a successful ping.
+            # If the ping succeeds, reset the failure counter.
             if self.consecutive_ping_failures > 0:
                 print("Ping succeeded. Resetting failure counter.")
             self.consecutive_ping_failures = 0
-            # Hide Wi-Fi warning if it is visible.
+            # Hide the WiFi warning if it is visible.
             if self.connection_notification_label.isVisible():
                 self.connection_notification_label.setVisible(False)
+
 
 
 
@@ -505,15 +518,13 @@ class DroneControlApp(QMainWindow):
     # ---------------------------------------------------------------------
     # Other Windows / Threads
     # ---------------------------------------------------------------------
-    def debug_active_threads(self):
-        print("Active threads:")
-        for thread in threading.enumerate():
-            print(thread.name)
+    
 
     def launch_fullscreen(self):
         self.stop_all_timers()
         pygame.joystick.quit()
         pygame.quit()
+        self.disconnect_drone()
         self.fullscreen_window = open_full_screen(self.field_path)
         self.fullscreen_window.show()
         self.close()
@@ -651,7 +662,7 @@ class DroneControlApp(QMainWindow):
             speed = self.drone.get_speed_x()
 
             self.battery_bar.setValue(battery_level)
-            if battery_level < 20:
+            if battery_level < 90:
                 self.notification_label.setText("Warning: Battery level is critically low!")
                 self.notification_label.setVisible(True)
             else:

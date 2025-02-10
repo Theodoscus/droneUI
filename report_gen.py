@@ -186,8 +186,8 @@ class DroneReportApp(QMainWindow):
         stats_layout = QGridLayout(stats_frame)
 
         self.disease_count_label = QLabel("Ασθένειες που εντοπίστηκαν: ")
-        self.plants_analyzed_label = QLabel("Φυτά που αναλύθηκαν: ")
-        self.affected_plants_label = QLabel("Επηρεασμένα φυτά: ")
+        self.plants_analyzed_label = QLabel("Φύλλα που αναλύθηκαν: ")
+        self.affected_plants_label = QLabel("Επηρεασμένα φύλλα: ")
 
         for lbl in [self.disease_count_label, self.plants_analyzed_label, self.affected_plants_label]:
             lbl.setStyleSheet("font-size: 16px; padding: 5px; color: black;")
@@ -297,7 +297,7 @@ class DroneReportApp(QMainWindow):
         photos_button.clicked.connect(self.open_photos_folder)
         main_layout.addWidget(photos_button)
         
-        # Button to open the photos folder
+        # Button to open the areas folder
         areas_button = QPushButton("Φωτογραφίες Επηρεασμένων Περιοχών", self)
         areas_button.setStyleSheet("font-size: 14px; background-color: #007BFF; color: white; padding: 10px;")
         areas_button.clicked.connect(self.open_areas_folder)
@@ -344,7 +344,8 @@ class DroneReportApp(QMainWindow):
     def load_newest_flight_data(self):
         """
         Loads the newest flight data folder (by timestamp) from the runs/ directory.
-        If no run folders exist, logs the information.
+        If the newest run’s flight_data.db is empty, then search older runs.
+        If no run with data is found, show a message and return to the homepage.
         """
         if not os.path.exists(self.runs_folder):
             logging.info("No runs directory found in %s.", self.runs_folder)
@@ -360,8 +361,49 @@ class DroneReportApp(QMainWindow):
 
         flight_folders.sort(reverse=True)
         newest_run = os.path.join(self.runs_folder, flight_folders[0])
-        logging.info("Loading data from: %s", newest_run)
-        self.load_results(newest_run)
+        db_path = os.path.join(newest_run, "flight_data.db")
+        data_available = False
+
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                df_all = pd.read_sql_query("SELECT * FROM flight_results", conn)
+            except Exception as e:
+                logging.error("Error reading DB in %s: %s", newest_run, e)
+            finally:
+                if 'conn' in locals():
+                    conn.close()
+            if not df_all.empty:
+                data_available = True
+
+        if data_available:
+            logging.info("Loading newest run with data: %s", newest_run)
+            self.load_results(newest_run)
+            return
+        else:
+            # Newest run has no data; search for an older run that has data.
+            for folder in flight_folders[1:]:
+                run_folder = os.path.join(self.runs_folder, folder)
+                db_path = os.path.join(run_folder, "flight_data.db")
+                if os.path.exists(db_path):
+                    try:
+                        conn = sqlite3.connect(db_path)
+                        df_all = pd.read_sql_query("SELECT * FROM flight_results", conn)
+                    except Exception as e:
+                        logging.error("Error reading DB in %s: %s", run_folder, e)
+                        continue
+                    finally:
+                        if 'conn' in locals():
+                            conn.close()
+                    if not df_all.empty:
+                        QMessageBox.information(self, "No Data",
+                            "The most recent flight report has no data. Loading previous flight report with data.")
+                        logging.info("Loading older run with data: %s", run_folder)
+                        self.load_results(run_folder)
+                        return
+            # If no run with data is found:
+            QMessageBox.information(self, "No Data", "All reports have no flight data. Returning to homepage.")
+            self.go_to_homepage()
 
     def list_previous_runs(self):
         """
@@ -707,7 +749,6 @@ class DroneReportApp(QMainWindow):
         else:
             self.countermeasures_button.setEnabled(True)
             self.countermeasures_button.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 10px;")
-
 
     # ---------------------------------------------------------------------
     # PDF Export Methods
@@ -1084,6 +1125,22 @@ class DroneReportApp(QMainWindow):
             dlg.exec()
         except ValueError as e:
             logging.error("Error displaying fullscreen image: %s", e)
+
+    # ---------------------------------------------------------------------
+    # Navigation / Cleanup Methods
+    # ---------------------------------------------------------------------
+    def go_to_homepage(self):
+        """
+        Navigates back to the homepage.
+        """
+        # Here you would typically instantiate and show your homepage window.
+        # For example:
+        # from homepage import HomePage
+        # self.home_page = HomePage()
+        # self.home_page.show()
+        # For this example, we'll just exit.
+        QMessageBox.information(self, "Homepage", "No flight data available. Returning to homepage.")
+        self.close()
 
 # ------------------------------------------------------------
 # Zoomable Image Dialog Class

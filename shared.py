@@ -12,7 +12,7 @@ def open_report_gen(field_path):
     return DroneReportApp(field_path)
 
 def open_full_screen(field_path):
-    from drone_control_fullscreen import DroneOperatingPage
+    from drone_control_full import DroneOperatingPage
     return DroneOperatingPage(field_path)
 
 def open_real_drone_control(field_path):

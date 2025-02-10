@@ -278,18 +278,26 @@ def save_infected_frames(detection_info: list, output_folder: str, top_n: int = 
     """
     Saves the top N frames (with the highest number of affected detections)
     to a subfolder called 'infected_frames' inside output_folder.
+    If no frames have any affected (non-Healthy) detections, no frames are saved.
     
     Args:
         detection_info (list): List of tuples (frame_index, affected_count, frame).
         output_folder (str): The output folder where the run data is saved.
         top_n (int): Number of top frames to save.
     """
-    infected_folder = os.path.join(output_folder, "infected_frames")
-    os.makedirs(infected_folder, exist_ok=True)
-    
     # Sort the detection info by affected_count in descending order
     sorted_info = sorted(detection_info, key=lambda x: x[1], reverse=True)
     
+    # Check if the highest affected_count is zero
+    if not sorted_info or sorted_info[0][1] == 0:
+        logging.info("All plants are healthy. No infected frames to save.")
+        return
+
+    # Create the folder for infected frames if needed
+    infected_folder = os.path.join(output_folder, "infected_frames")
+    os.makedirs(infected_folder, exist_ok=True)
+    
+    # Save only the top_n frames with the highest affected counts
     for idx, (frame_index, affected_count, frame) in enumerate(sorted_info[:top_n]):
         filename = f"infected_frame_{frame_index}_count_{affected_count}.jpg"
         filepath = os.path.join(infected_folder, filename)
