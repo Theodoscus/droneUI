@@ -1,8 +1,8 @@
-import sys
 import os
 import datetime
 import threading
-import time
+import platform
+import subprocess
 
 import pygame
 import cv2
@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QMessageBox, QGroupBox, QSizePolicy, QDialog
 )
-from PyQt6.QtCore import Qt, QTimer, QThread, QObject, pyqtSignal, QThreadPool
+from PyQt6.QtCore import Qt, QTimer, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QImage, QPixmap
 
 from report_gen import DroneReportApp
@@ -23,52 +23,90 @@ from shared import open_homepage, open_full_screen
 # ---------------------------------------------------------------------
 # 1) Worker + Dialog Classes
 # ---------------------------------------------------------------------
+import re
+from djitellopy import Tello
+from PyQt6.QtCore import QObject, pyqtSignal
+
 class DroneConnectWorker(QObject):
-    """
-    Runs Tello connect() + streamon() in a separate thread to avoid blocking the GUI.
-    We also respect 'thread interruption' if the user closes the dialog.
-    """
     connect_success = pyqtSignal()
     connect_error = pyqtSignal(str)
 
-    def __init__(self, drone):
+    def __init__(self, drone: Tello):
+        super().__init__()
+        self.drone = drone
+
+    import re
+from djitellopy import Tello
+from PyQt6.QtCore import QObject, pyqtSignal
+
+class DroneConnectWorker(QObject):
+    connect_success = pyqtSignal()
+    connect_error = pyqtSignal(str)
+
+    def __init__(self, drone: Tello):
         super().__init__()
         self.drone = drone
 
     def run(self):
-        """Background attempt to connect and stream."""
-        thread = QThread.currentThread()
-
-        # If the thread has been interrupted before starting, bail out
-        if thread.isInterruptionRequested():
-            return
-
+        """
+        Attempt to connect to the drone and start video streaming.
+        Some firmware versions (or library versions) return the drone’s IP address
+        (or a tuple containing it) instead of "ok". This version checks if the raw
+        response is a tuple and extracts the first element before sanitizing.
+        """
         try:
-            self.drone.connect()
-            # Check interruption again
-            if thread.isInterruptionRequested():
-                return
-
+            # Attempt to call connect(); if it raises an exception, capture its message.
+            try:
+                raw_response = self.drone.connect()
+            except Exception as e:
+                raw_response = str(e)
+            
+            # If raw_response is a tuple (or list), take its first element.
+            if isinstance(raw_response, (tuple, list)):
+                print("Raw response is a tuple/list; extracting first element.")
+                raw_response = raw_response[0]
+            
+            # Log the raw response (using repr to show quotes and extra characters)
+            print("Raw response from drone.connect():", repr(raw_response))
+            
+            # If raw_response is None, treat it as success.
+            if raw_response is None:
+                print("Received None from drone.connect(); treating as successful connection.")
+            else:
+                # If raw_response is bytes, decode it.
+                if isinstance(raw_response, bytes):
+                    raw_response = raw_response.decode("utf-8")
+                # Sanitize the response: remove extra whitespace and any wrapping quotes.
+                response_str = str(raw_response).strip().strip('"').strip("'")
+                print("Sanitized response:", repr(response_str))
+                # Accept the response if it is "ok" or "192.168.10.1".
+                if response_str not in ["ok", "192.168.10.1"]:
+                    raise Exception(response_str)
+                else:
+                    print("Accepted response:", response_str)
+            
+            # Start video streaming and emit success.
             self.drone.streamon()
             self.connect_success.emit()
-        except Exception as exc:
-            self.connect_error.emit(str(exc))
+        except Exception as e:
+            self.connect_error.emit(str(e))
+
+
 
 
 class ConnectingDialog(QDialog):
     """
     A modal dialog showing "Connecting..." with an indeterminate progress bar.
-    If the user closes this window, we emit user_cancelled so that
-    the main code can stop the worker thread.
+    The close button is removed so the user cannot dismiss it prematurely.
     """
-    user_cancelled = pyqtSignal()
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Connecting to Drone")
-        # We DO NOT remove the close button here; user can close to cancel
 
+        # Remove the close button from the title bar
+        self.setWindowFlags(self.windowFlags())
         self.setModal(True)
+
         layout = QVBoxLayout()
 
         title_label = QLabel("<h2>Connecting to Tello Drone</h2>")
@@ -84,14 +122,6 @@ class ConnectingDialog(QDialog):
         layout.addWidget(self.progress_bar)
 
         self.setLayout(layout)
-
-    def closeEvent(self, event):
-        """
-        If the user closes this dialog, we emit user_cancelled,
-        so the main code can stop the connection attempt.
-        """
-        self.user_cancelled.emit()
-        super().closeEvent(event)
 
 
 class DroneControlApp(QMainWindow):
@@ -116,6 +146,9 @@ class DroneControlApp(QMainWindow):
         self.flight_start_time = None
         self.is_recording = False
         self.video_writer = None
+        # Initialize a counter for consecutive ping failures.
+        self.consecutive_ping_failures = 0
+
 
         # Timers
         self.flight_timer = QTimer()
@@ -123,7 +156,8 @@ class DroneControlApp(QMainWindow):
 
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui_stats)
-        self.ui_timer.start(2000)  # Update stats every 2 seconds
+        self.ui_timer.start(3000)  # Every 3 seconds instead of 2
+
 
         pygame.init()
         pygame.joystick.init()
@@ -132,6 +166,12 @@ class DroneControlApp(QMainWindow):
         self.controller_timer = QTimer()
         self.controller_timer.timeout.connect(self.poll_controller_input)
         self.controller_timer.start(20)
+        
+        # Check the drone connection every 5 seconds
+        self.connection_check_timer = QTimer()
+        self.connection_check_timer.timeout.connect(self.check_drone_connection)
+        self.connection_check_timer.start(2000)  
+
 
         self.key_pressed_mapping = {
             Qt.Key.Key_W: self.move_forward,
@@ -171,7 +211,9 @@ class DroneControlApp(QMainWindow):
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
 
-        # 1) TOP AREA
+        # --------------------------------------------------------------------
+        # 1) TOP AREA (3/4 of total height)
+        # --------------------------------------------------------------------
         top_area_widget = QWidget()
         top_area_layout = QVBoxLayout(top_area_widget)
 
@@ -190,6 +232,13 @@ class DroneControlApp(QMainWindow):
         self.notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.notification_label.setVisible(False)
         top_area_layout.addWidget(self.notification_label)
+        
+        # Wi-Fi Connection Warning Label (new)
+        self.connection_notification_label = QLabel("")
+        self.connection_notification_label.setStyleSheet("color: orange; font-size: 16px; font-weight: bold;")
+        self.connection_notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.connection_notification_label.setVisible(False)
+        top_area_layout.addWidget(self.connection_notification_label)
 
         # Content Layout (Left panel + Stream)
         content_layout = QHBoxLayout()
@@ -256,7 +305,9 @@ class DroneControlApp(QMainWindow):
 
         main_layout.addWidget(top_area_widget, stretch=3)
 
-        # 2) BOTTOM AREA
+        # --------------------------------------------------------------------
+        # 2) BOTTOM AREA (1/4 of total height)
+        # --------------------------------------------------------------------
         bottom_area_widget = QWidget()
         bottom_area_layout = QVBoxLayout(bottom_area_widget)
 
@@ -316,84 +367,63 @@ class DroneControlApp(QMainWindow):
             self.disconnect_drone()
         else:
             self.connect_drone_async()
+            
+    
 
     def disconnect_drone(self):
-        """Disconnect from Tello if currently connected."""
-        if self.is_connected:
+        """
+        Disconnect from the drone without permanently shutting down the instance.
+        Instead of calling self.drone.end(), we simply turn off the stream.
+        """
+        if self.is_connected and self.drone:
             try:
-                self.drone.end()
-                time.sleep(2)
-                print("Drone disconnected via Tello.end()")
+                self.drone.streamoff()  # Only turn off the stream.
+                print("Drone stream turned off.")
             except Exception as e:
-                print(f"Error on drone disconnect: {e}")
-
-            # Stop the timer that keeps reading frames
-            self.stream_timer.stop()
-
+                print("Error turning off drone stream:", e)
             self.is_connected = False
+            self.stream_timer.stop()
             self.connection_status.setText("DISCONNECTED")
             self.connection_status.setStyleSheet(
                 "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
             )
+            self.connect_toggle_button.setText("Connect")
+            self.connect_toggle_button.setStyleSheet(
+                "font-size: 16px; padding: 10px; background-color: green; color: white;"
+            )
+        else:
+            print("Drone already disconnected.")
 
-        self.connect_toggle_button.setText("Connect")
-        self.connect_toggle_button.setStyleSheet(
-            "font-size: 16px; padding: 10px; background-color: green; color: white;"
-        )
+
 
     # ---------------------------------------------------------------------
-    # Asynchronous Connection
+    # 2) Asynchronous Connection
     # ---------------------------------------------------------------------
     def connect_drone_async(self):
         """
-        Use a worker thread + progress dialog to connect without freezing.
-        Also used at startup. If user closes the dialog, we cancel the attempt.
+        Attempt to connect using the existing Tello instance.
+        Use a QThread and a DroneConnectWorker to avoid blocking the UI.
         """
+        # Do not reinitialize self.drone here—reuse the existing instance.
         self.connecting_dialog = ConnectingDialog()
-        self.connecting_dialog.user_cancelled.connect(self.handle_connect_cancelled)
         self.connecting_dialog.show()
 
-        self.thread = QThread()
-        self.worker = DroneConnectWorker(self.drone)
-        self.worker.moveToThread(self.thread)
-
-        # When the thread starts, run the worker
-        self.thread.started.connect(self.worker.run)
-
-        # Worker signals
-        self.worker.connect_success.connect(self.handle_connect_success)
-        self.worker.connect_error.connect(self.handle_connect_error)
-
-        # Stop thread after success or error
-        self.worker.connect_success.connect(self.thread.quit)
-        self.worker.connect_error.connect(self.thread.quit)
-
-        self.thread.start()
-
-    def handle_connect_cancelled(self):
-        """
-        The user closed the connecting_dialog. Cancel the connection attempt
-        and revert to "disconnected."
-        """
-        print("User cancelled the drone connection attempt.")
-        if self.thread.isRunning():
-            # Request interruption and stop the thread
-            self.thread.requestInterruption()
-            self.thread.quit()
-            self.thread.wait()
-
-        self.is_connected = False
-        self.connection_status.setText("DISCONNECTED")
-        self.connection_status.setStyleSheet(
-            "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
-        )
-        self.connect_toggle_button.setText("Connect")
-        self.connect_toggle_button.setStyleSheet(
-            "font-size: 16px; padding: 10px; background-color: green; color: white;"
-        )
+        self.connection_thread = QThread()
+        self.connection_worker = DroneConnectWorker(self.drone)
+        self.connection_worker.moveToThread(self.connection_thread)
+        self.connection_thread.started.connect(self.connection_worker.run)
+        self.connection_worker.connect_success.connect(self.handle_connect_success)
+        self.connection_worker.connect_error.connect(self.handle_connect_error)
+        self.connection_worker.connect_success.connect(self.connection_thread.quit)
+        self.connection_worker.connect_error.connect(self.connection_thread.quit)
+        self.connection_thread.finished.connect(self.connection_thread.deleteLater)
+        self.connection_thread.start()
 
     def handle_connect_success(self):
-        """Called if the worker finishes connecting successfully."""
+        """
+        Called when the connection worker signals success.
+        Update the UI to reflect that the drone is now connected.
+        """
         self.is_connected = True
         self.connection_status.setText("CONNECTED")
         self.connection_status.setStyleSheet(
@@ -403,20 +433,19 @@ class DroneControlApp(QMainWindow):
         self.connect_toggle_button.setStyleSheet(
             "font-size: 16px; padding: 10px; background-color: red; color: white;"
         )
-
-        # Start the stream timer
+        # Start the timer that updates the video stream.
         self.stream_timer.start(50)
-
-        # Close the "Connecting..." dialog
         self.connecting_dialog.close()
-        print("Drone connected, stream is ON")
+        print("Drone connected successfully and stream is ON.")
 
     def handle_connect_error(self, error_message):
-        """Called if the worker raises an exception."""
-        print(f"Error reconnecting: {error_message}")
+        """
+        Called when the connection worker signals an error.
+        Display an error message and update the UI accordingly.
+        """
+        print("Error connecting to drone:", error_message)
         QMessageBox.critical(self, "Connection Error", f"Could not connect:\n{error_message}")
         self.is_connected = False
-
         self.connection_status.setText("DISCONNECTED")
         self.connection_status.setStyleSheet(
             "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
@@ -425,8 +454,53 @@ class DroneControlApp(QMainWindow):
         self.connect_toggle_button.setStyleSheet(
             "font-size: 16px; padding: 10px; background-color: green; color: white;"
         )
-
         self.connecting_dialog.close()
+        
+    def check_drone_connection(self):
+        """Periodically check if the drone is still reachable via ping."""
+        if not self.is_connected:
+            return
+
+        if not self.ping_drone("192.168.10.1"):
+            self.consecutive_ping_failures += 1
+            print(f"Ping failed ({self.consecutive_ping_failures} consecutive failure(s)).")
+            # Only disconnect if there are 3 consecutive failures.
+            if self.consecutive_ping_failures >= 3:
+                print("Multiple ping failures: Drone not reachable. Marking as disconnected.")
+                self.disconnect_drone()
+                self.connection_notification_label.setText("Drone disconnected from WiFi!")
+                self.connection_notification_label.setVisible(True)
+        else:
+            # Reset failure counter on a successful ping.
+            if self.consecutive_ping_failures > 0:
+                print("Ping succeeded. Resetting failure counter.")
+            self.consecutive_ping_failures = 0
+            # Hide Wi-Fi warning if it is visible.
+            if self.connection_notification_label.isVisible():
+                self.connection_notification_label.setVisible(False)
+
+
+
+
+
+    def ping_drone(self, ip="192.168.10.1", count=1, timeout=1):
+        """
+        Ping the given IP address.
+        Returns True if the ping is successful, False otherwise.
+        """
+        # Choose the correct parameter based on OS.
+        param = '-n' if platform.system().lower() == 'windows' else '-c'
+        # Build the command list using the provided ip (not self).
+        if platform.system().lower() == "windows":
+            command = ["ping", param, str(count), "-w", str(timeout * 1000), ip]
+        else:
+            command = ["ping", param, str(count), "-W", str(timeout), ip]
+        try:
+            subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
 
     # ---------------------------------------------------------------------
     # Other Windows / Threads
@@ -821,9 +895,3 @@ class DroneControlApp(QMainWindow):
                 print(f"Error turning stream off: {e}")
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    field_path = "fields"
-    window = DroneControlApp(field_path)
-    window.show()
-    sys.exit(app.exec())
