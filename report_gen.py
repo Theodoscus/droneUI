@@ -32,6 +32,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 # Local imports
 from countermeasures import CounterMeasuresWindow
 from field_progress import FieldProgressPage
+from shared import open_homepage
 
 # ------------------------------------------------------------
 # Register Fonts and Constants
@@ -231,7 +232,7 @@ class DroneReportApp(QMainWindow):
             main_layout (QVBoxLayout): Layout to add the image section.
         """
         image_frame = QFrame()
-        image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
+        image_frame.setStyleSheet("border: 1px solid gray; paddfing: 10px; background-color: #f9f9f9;")
         image_layout = QVBoxLayout(image_frame)
 
         self.image_label = QLabel("Φύλλα με ασθένειες που εντοπίστηκαν στην πτήση")
@@ -1136,10 +1137,10 @@ class DroneReportApp(QMainWindow):
         # Here you would typically instantiate and show your homepage window.
         # For example:
         # from homepage import HomePage
-        # self.home_page = HomePage()
-        # self.home_page.show()
-        # For this example, we'll just exit.
-        QMessageBox.information(self, "Homepage", "No flight data available. Returning to homepage.")
+        self.home_page = open_homepage()
+        self.home_page.show()
+        
+        
         self.close()
 
 # ------------------------------------------------------------

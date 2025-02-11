@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt
 from ultralytics import YOLO
 
 # Local import for the report application
-from report_gen import DroneReportApp
+from shared import open_report_gen
 
 # ------------------------------------------------------------
 # Global Constants and Configuration
@@ -445,8 +445,8 @@ def process_video(
     update_field_database(field_path)
 
     # Display the DroneReportApp to show the processing results
-    report_app = DroneReportApp(field_path)
-    report_app.show()
+    open_report_gen(field_path)
+    
 
 def run(video_path: str, duration: str, field_path: str) -> None:
     """

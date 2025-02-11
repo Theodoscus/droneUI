@@ -2,7 +2,6 @@ import sys
 import os
 import datetime
 import logging
-import random
 import subprocess
 import platform
 
@@ -18,49 +17,60 @@ from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPoint
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPolygon
 
 from video_process import run
-from shared import open_real_drone_control  # This should open your windowed UI
+from shared import open_real_drone_control  # Opens the windowed UI
 
 # Global exception hook
 def log_uncaught_exceptions(exctype, value, traceback):
     logging.critical("Uncaught exception", exc_info=(exctype, value, traceback))
 sys.excepthook = log_uncaught_exceptions
 
-# ---------------------------------------------------------------------
-# RealPTello: A Real Tello Drone Wrapper
-# ---------------------------------------------------------------------
-
-class RealPTello:
+# =============================================================================
+# RealDroneController: Separates real-drone logic from the UI
+# =============================================================================
+class RealDroneController:
     """
-    Wraps djitellopy.Tello and provides basic drone methods.
+    Encapsulates all real drone control functionality.
+    Wraps djitellopy.Tello and provides methods for connection,
+    flight commands, video streaming, and video recording.
     """
-    def __init__(self):
-        self.drone = Tello()
+    def __init__(self, flights_folder):
+        self.flights_folder = flights_folder
+        self.tello = Tello()
         self.is_flying = False
+        self.frame_read = None
+        self.is_recording = False
+        self.video_writer = None
+        self.flight_start_time = None
+        self.current_flight_folder = None
+        self.frame_width = 960
+        self.frame_height = 720
 
     def connect(self):
-        self.drone.connect()
-        self.drone.streamon()
-        battery = self.drone.get_battery()
+        """Connect to the real drone and start video streaming."""
+        self.tello.connect()
+        self.tello.streamon()
+        self.frame_read = self.tello.get_frame_read()
+        battery = self.tello.get_battery()
         print(f"Real Drone connected. Battery: {battery}%")
 
     def streamon(self):
-        self.drone.streamon()
+        self.tello.streamon()
         print("Real drone stream started")
 
     def streamoff(self):
-        self.drone.streamoff()
+        self.tello.streamoff()
         print("Real drone stream stopped")
 
     def end(self):
-        self.drone.end()
+        self.tello.end()
         print("Real drone disconnected")
 
-    # Movement commands
+    # --- Basic Drone Movement Commands ---
     def takeoff(self):
         if self.is_flying:
             print("Drone is already in flight.")
         else:
-            self.drone.takeoff()
+            self.tello.takeoff()
             self.is_flying = True
             print("Taking off...")
 
@@ -68,91 +78,123 @@ class RealPTello:
         if not self.is_flying:
             print("Drone is already landed.")
         else:
-            self.drone.land()
+            self.tello.land()
             self.is_flying = False
             print("Landing...")
 
-    def move_forward(self):
+    def move_forward(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_forward(30)
+        self.tello.move_forward(distance)
         print("Moving forward...")
 
-    def move_backward(self):
+    def move_backward(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_back(30)
+        self.tello.move_back(distance)
         print("Moving backward...")
 
-    def move_left(self):
+    def move_left(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_left(30)
+        self.tello.move_left(distance)
         print("Moving left...")
 
-    def move_right(self):
+    def move_right(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_right(30)
+        self.tello.move_right(distance)
         print("Moving right...")
 
-    def move_up(self):
+    def move_up(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_up(30)
+        self.tello.move_up(distance)
         print("Moving up...")
 
-    def move_down(self):
+    def move_down(self, distance=30):
         if not self.is_flying:
             print("Cannot move. Drone not in flight.")
             return
-        self.drone.move_down(30)
+        self.tello.move_down(distance)
         print("Moving down...")
 
-    def rotate_left(self):
+    def rotate_left(self, angle=30):
         if not self.is_flying:
             print("Cannot rotate. Drone not in flight.")
             return
-        self.drone.rotate_counter_clockwise(30)
+        self.tello.rotate_counter_clockwise(angle)
         print("Rotating left...")
 
-    def rotate_right(self):
+    def rotate_right(self, angle=30):
         if not self.is_flying:
             print("Cannot rotate. Drone not in flight.")
             return
-        self.drone.rotate_clockwise(30)
+        self.tello.rotate_clockwise(angle)
         print("Rotating right...")
 
     def flip_left(self):
         if not self.is_flying:
             print("Cannot flip. Drone not in flight.")
             return
-        self.drone.flip_left()
+        self.tello.flip_left()
         print("Flipping left...")
 
     def flip_right(self):
         if not self.is_flying:
             print("Cannot flip. Drone not in flight.")
             return
-        self.drone.flip_right()
+        self.tello.flip_right()
         print("Flipping right...")
 
-# ---------------------------------------------------------------------
-# Fullscreen DroneOperatingPage: Full-Screen Drone Operation UI
-# ---------------------------------------------------------------------
+    # --- Helper Methods for Drone State ---
+    def get_battery(self):
+        return self.tello.get_battery()
 
+    def get_height(self):
+        return self.tello.get_height()
+
+    def get_speed_x(self):
+        return self.tello.get_speed_x()
+
+    # --- Video Recording Methods ---
+    def start_recording(self):
+        if self.current_flight_folder is None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
+            os.makedirs(self.current_flight_folder, exist_ok=True)
+        self.is_recording = True
+        output_path = os.path.join(self.current_flight_folder, "flight_video.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.video_writer = cv2.VideoWriter(output_path, fourcc, 20.0, (self.frame_width, self.frame_height))
+        print(f"Recording started: {output_path}")
+
+    def stop_recording(self):
+        if self.is_recording and self.video_writer is not None:
+            self.is_recording = False
+            self.video_writer.release()
+            self.video_writer = None
+            print("Recording stopped.")
+
+    def record_frame(self, frame):
+        if self.is_recording and self.video_writer is not None:
+            self.video_writer.write(frame)
+
+
+# =============================================================================
+# Fullscreen Drone Operating Page (UI remains unchanged)
+# =============================================================================
 class DroneOperatingPage(QWidget):
     """
     Fullscreen UI for real drone operation.
-    Automatically starts video recording when the drone takes off and stops
-    recording when the drone lands.
-    Provides live video stream, control buttons, drone stats, joystick overlays,
-    and toggling between full screen and windowed modes.
+    Uses the RealDroneController for all drone commands and recording.
+    Provides live video stream, control buttons, stats, joystick overlays,
+    and full screen/windowed mode toggling.
     """
     def __init__(self, field_path):
         super().__init__()
@@ -160,20 +202,18 @@ class DroneOperatingPage(QWidget):
         self.flights_folder = os.path.join(self.field_path, "flights")
         os.makedirs(self.flights_folder, exist_ok=True)
 
-        # Initialize the real drone
-        self.drone = RealPTello()
-        self.drone.connect()
-        self.drone.streamon()
-        self.frame_read = self.drone.drone.get_frame_read()
+        # Initialize the real drone controller
+        self.drone_controller = RealDroneController(self.flights_folder)
+        self.drone_controller.connect()
+        self.drone_controller.streamon()
+        # For convenience, also keep a local reference to the frame reader:
+        self.frame_read = self.drone_controller.frame_read
 
         # States
         self.flight_duration = 0
         self.battery_level = 100
-        self.current_flight_folder = None
 
-        # Video recording state
-        self.is_recording = False
-        self.video_writer = None
+        # Video recording state is now managed by the controller
 
         # Button state for joystick debouncing
         self.button_states = {}
@@ -315,7 +355,7 @@ class DroneOperatingPage(QWidget):
         self.joystick_timer.stop()
         pygame.joystick.quit()
         pygame.quit()
-        self.drone.end()
+        self.drone_controller.end()
         self.windowed_ui = open_real_drone_control(self.field_path)
         self.windowed_ui.show()
         self.close()
@@ -326,11 +366,11 @@ class DroneOperatingPage(QWidget):
 
     def update_ui_stats(self):
         try:
-            battery = self.drone.drone.get_battery()
-            height = self.drone.drone.get_height()
+            battery = self.drone_controller.get_battery()
+            height = self.drone_controller.get_height()
             self.battery_bar.setValue(battery)
             self.info_labels["Height"].setText(f"{height} cm")
-            speed = self.drone.drone.get_speed_x()
+            speed = self.drone_controller.get_speed_x()
             self.info_labels["Speed"].setText(f"{speed} cm/s")
         except Exception as e:
             print("Failed to get drone state:", e)
@@ -339,7 +379,7 @@ class DroneOperatingPage(QWidget):
         frame = self.frame_read.frame
         if frame is None:
             return
-        # Since the drone already transmits RGB, we use it directly for display.
+        # Use the drone’s RGB frame directly for display.
         h, w, ch = frame.shape
         bytes_per_line = ch * w
         q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
@@ -348,40 +388,20 @@ class DroneOperatingPage(QWidget):
                                        Qt.AspectRatioMode.KeepAspectRatio,
                                        Qt.TransformationMode.SmoothTransformation)
         self.stream_label.setPixmap(scaled_pixmap)
-        if self.is_recording and self.video_writer is not None:
-            # Do not convert the frame because it is already RGB.
-            self.video_writer.write(frame)
+        if self.drone_controller.is_recording and self.drone_controller.video_writer is not None:
+            self.drone_controller.record_frame(frame)
 
-    # ---------------------------------------------------------------------
-    # Video Recording Functions (auto-record on takeoff/land)
-    # ---------------------------------------------------------------------
+    # --- Video Recording and Flight Control (auto-record on takeoff/land) ---
     def start_recording(self):
-        # Create a new flight folder if needed
-        if self.current_flight_folder is None:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
-            os.makedirs(self.current_flight_folder, exist_ok=True)
-        self.is_recording = True
-        self.frame_width = 960
-        self.frame_height = 720
-        output_path = os.path.join(self.current_flight_folder, "flight_video.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        # VideoWriter expects frames in RGB if we are not converting
-        self.video_writer = cv2.VideoWriter(output_path, fourcc, 20.0, (self.frame_width, self.frame_height))
-        print(f"Recording started: {output_path}")
+        self.drone_controller.start_recording()
 
     def stop_recording(self):
-        if self.is_recording and self.video_writer is not None:
-            self.is_recording = False
-            self.video_writer.release()
-            self.video_writer = None
-            print("Recording stopped.")
+        self.drone_controller.stop_recording()
 
-    # ---------------------------------------------------------------------
-    # Take Off & Land Functions (auto-record control)
-    # ---------------------------------------------------------------------
+    
+    
     def take_off(self):
-        if not self.drone.is_flying:
+        if not self.drone_controller.is_flying:
             self.drone_state_label.setText("Taking Off...")
             self.drone_state_label.adjustSize()
             self.close_button.setEnabled(False)
@@ -391,19 +411,17 @@ class DroneOperatingPage(QWidget):
     def _perform_take_off(self):
         self.drone_state_label.setText("On Air.")
         self.drone_state_label.adjustSize()
-        self.drone.takeoff()
+        self.drone_controller.takeoff()
         self.flight_timer.start(1000)
-        self.flight_start_time = datetime.datetime.now()
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
-        os.makedirs(self.current_flight_folder, exist_ok=True)
+        self.drone_controller.flight_start_time = datetime.datetime.now()
+        # Reset the flight folder and start recording
+        self.drone_controller.current_flight_folder = None
         self.stream_label.setText("Stream On")
-        # Start recording automatically on takeoff
         self.start_recording()
         print("Take off successful")
 
     def land(self):
-        if self.drone.is_flying:
+        if self.drone_controller.is_flying:
             self.drone_state_label.setText("Landing...")
             self.drone_state_label.adjustSize()
             self.close_button.setEnabled(True)
@@ -413,31 +431,28 @@ class DroneOperatingPage(QWidget):
     def _perform_landing(self):
         self.drone_state_label.setText("Landed.")
         self.drone_state_label.adjustSize()
-        self.drone.land()
+        self.drone_controller.land()
         self.flight_timer.stop()
         self.stream_label.setText("Stream Off")
         print("Landing successful")
-        # Stop recording automatically on landing
         self.stop_recording()
-        self.flight_end_time = datetime.datetime.now()
-        duration = self.flight_end_time - self.flight_start_time
+        self.drone_controller.flight_end_time = datetime.datetime.now()
+        duration = self.drone_controller.flight_end_time - self.drone_controller.flight_start_time
         QMessageBox.information(self, "Drone Status", f"Flight completed!\nDuration: {duration}")
         self.process_flight_video(duration)
 
     def emergency_landing(self):
         logging.info("Emergency landing initiated!")
         self.update_drone_state("Emergency Landing")
+        self.drone_controller.land()
 
     def update_drone_state(self, state: str):
         self.drone_state_label.setText(state)
         self.drone_state_label.adjustSize()
         self.drone_state_label.move(self.width() // 2 - self.drone_state_label.width() // 2, self.height() - 100)
 
-    # ---------------------------------------------------------------------
-    # Video Processing Function
-    # ---------------------------------------------------------------------
     def process_flight_video(self, duration):
-        if not self.current_flight_folder:
+        if not self.drone_controller.current_flight_folder:
             QMessageBox.warning(self, "Error", "Flight folder not set. Cannot process video.")
             return
         runs_folder = os.path.join(self.field_path, "runs")
@@ -448,7 +463,7 @@ class DroneOperatingPage(QWidget):
         video_formats = [".mp4", ".mov", ".avi"]
         video_path = None
         for fmt in video_formats:
-            potential_path = os.path.join(self.current_flight_folder, f"flight_video{fmt}")
+            potential_path = os.path.join(self.drone_controller.current_flight_folder, f"flight_video{fmt}")
             if os.path.exists(potential_path):
                 video_path = potential_path
                 break
@@ -461,9 +476,7 @@ class DroneOperatingPage(QWidget):
         else:
             QMessageBox.warning(self, "Video Missing", "No flight video found for processing!")
 
-    # ---------------------------------------------------------------------
-    # Controller & Joystick Functions
-    # ---------------------------------------------------------------------
+    # --- Controller & Joystick Functions ---
     def setup_controller(self):
         try:
             if pygame.joystick.get_count() > 0:
@@ -507,21 +520,21 @@ class DroneOperatingPage(QWidget):
     def map_joystick_to_drone(self, left_x, left_y, right_x, right_y):
         try:
             if left_y < -0.5:
-                self.drone.move_forward()
+                self.drone_controller.move_forward()
             elif left_y > 0.5:
-                self.drone.move_backward()
+                self.drone_controller.move_backward()
             if left_x < -0.5:
-                self.drone.move_left()
+                self.drone_controller.move_left()
             elif left_x > 0.5:
-                self.drone.move_right()
+                self.drone_controller.move_right()
             if right_y < -0.5:
-                self.drone.move_up()
+                self.drone_controller.move_up()
             elif right_y > 0.5:
-                self.drone.move_down()
+                self.drone_controller.move_down()
             if right_x < -0.5:
-                self.drone.rotate_left()
+                self.drone_controller.rotate_left()
             elif right_x > 0.5:
-                self.drone.rotate_right()
+                self.drone_controller.rotate_right()
         except Exception as e:
             logging.error(f"Error mapping joystick inputs to drone: {e}")
 
@@ -536,15 +549,14 @@ class DroneOperatingPage(QWidget):
         self.joystick_timer.stop()
         pygame.joystick.quit()
         pygame.quit()
-        self.drone.end()
+        self.drone_controller.end()
         self.windowed_ui = open_real_drone_control(self.field_path)
         self.windowed_ui.show()
         self.close()
 
-# ---------------------------------------------------------------------
-# Joystick Overlay Classes
-# ---------------------------------------------------------------------
-
+# =============================================================================
+# Joystick Overlay Classes (unchanged)
+# =============================================================================
 class DirectionalJoystick(QWidget):
     def __init__(self, parent, label):
         super().__init__(parent)
@@ -605,10 +617,12 @@ class CircularJoystick(QWidget):
         self.y_pos = y
         self.update()
 
-
+# =============================================================================
+# Main entry point
+# =============================================================================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    field_path = "fields"
+    field_path = "fields"  # or adjust as needed
     window = DroneOperatingPage(field_path)
     window.show()
     sys.exit(app.exec())
