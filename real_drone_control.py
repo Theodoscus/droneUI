@@ -632,7 +632,7 @@ class DroneControlApp(QMainWindow):
             # Update the battery progress bar.
             self.battery_bar.setValue(battery_level)
             # Show a warning if the battery level is critically low.
-            if battery_level < 90:
+            if battery_level < 20:
                 self.notification_label.setText("Warning: Battery level is critically low!")
                 self.notification_label.setVisible(True)
             else:
@@ -734,6 +734,12 @@ class DroneControlApp(QMainWindow):
         else:
             self.history_button.setEnabled(False)
 
+    def closeEvent(self, event):
+        """Ensure all timers are stopped and drone is disconnected on close."""
+        self.stop_all_timers()
+        self.disconnect_drone()
+        super().closeEvent(event)
+    
     # ---------------------------------------------------------------------
     # Video Stream: Fetch and display the video feed from the drone.
     # ---------------------------------------------------------------------
