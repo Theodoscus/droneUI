@@ -732,9 +732,9 @@ class CircularJoystick(QWidget):
 # =============================================================================
 # Main entry point
 # =============================================================================
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    field_path = "fields"  # or wherever you store flight data
-    window = DroneOperatingPage(field_path)
-    window.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     field_path = "fields"  # or wherever you store flight data
+#     window = DroneOperatingPage(field_path)
+#     window.show()
+#     sys.exit(app.exec())

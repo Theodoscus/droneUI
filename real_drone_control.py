@@ -884,14 +884,14 @@ class DroneControlApp(QMainWindow):
 # =============================================================================
 # Main entry point (for testing)
 # =============================================================================
-if __name__ == "__main__":
-    import sys
-    # Create the QApplication instance.
-    app = QApplication(sys.argv)
-    # Define the field path where flight data will be stored (adjust as necessary).
-    field_path = os.path.abspath("fields/field1")
-    # Create the main DroneControlApp window.
-    window = DroneControlApp(field_path)
-    window.show()
-    # Start the event loop.
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     import sys
+#     # Create the QApplication instance.
+#     app = QApplication(sys.argv)
+#     # Define the field path where flight data will be stored (adjust as necessary).
+#     field_path = os.path.abspath("fields/field1")
+#     # Create the main DroneControlApp window.
+#     window = DroneControlApp(field_path)
+#     window.show()
+#     # Start the event loop.
+#     sys.exit(app.exec())
