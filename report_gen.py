@@ -167,7 +167,7 @@ class DroneReportApp(QMainWindow):
 
         close_button = QPushButton("Κλείσιμο")
         close_button.setStyleSheet("font-size: 14px; color: black; background-color: lightgray; padding: 5px 10px;")
-        close_button.clicked.connect(self.close)
+        close_button.clicked.connect(self.go_to_homepage)
         header_layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         main_layout.addLayout(header_layout)
@@ -232,7 +232,7 @@ class DroneReportApp(QMainWindow):
             main_layout (QVBoxLayout): Layout to add the image section.
         """
         image_frame = QFrame()
-        image_frame.setStyleSheet("border: 1px solid gray; paddfing: 10px; background-color: #f9f9f9;")
+        image_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f9f9f9;")
         image_layout = QVBoxLayout(image_frame)
 
         self.image_label = QLabel("Φύλλα με ασθένειες που εντοπίστηκαν στην πτήση")

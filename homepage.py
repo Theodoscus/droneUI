@@ -288,6 +288,8 @@ class HomePage(QMainWindow):
 
         # Launch flight history/report
         self.report_app = open_report_gen(field_path)
+        self.report_app.show()
+        self.close()
         
 
     def create_new_field(self):

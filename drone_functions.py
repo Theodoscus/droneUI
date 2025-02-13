@@ -1,4 +1,3 @@
-# dronefunctions.py
 import os
 import datetime
 import cv2
@@ -174,7 +173,7 @@ class DroneController:
                 self.tello.land()
                 self.stop_recording()
                 self.is_flying = False
-                return 
+                return
             except Exception as e:
                 print(f"Landing attempt {attempt + 1} failed: {e}")
                 if attempt == 0:
@@ -187,53 +186,73 @@ class DroneController:
     # ----- Movement Commands -----
     def move_forward(self, distance=30):
         """Move the drone forward by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_forward(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move forward: Drone must be connected and flying.")
+            return
+        self.tello.move_forward(distance)
 
     def move_backward(self, distance=30):
         """Move the drone backward by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_back(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move backward: Drone must be connected and flying.")
+            return
+        self.tello.move_back(distance)
 
     def move_left(self, distance=30):
         """Move the drone to the left by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_left(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move left: Drone must be connected and flying.")
+            return
+        self.tello.move_left(distance)
 
     def move_right(self, distance=30):
         """Move the drone to the right by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_right(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move right: Drone must be connected and flying.")
+            return
+        self.tello.move_right(distance)
 
     def move_up(self, distance=30):
         """Move the drone upward by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_up(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move up: Drone must be connected and flying.")
+            return
+        self.tello.move_up(distance)
 
     def move_down(self, distance=30):
         """Move the drone downward by the specified distance (in centimeters)."""
-        if self.is_connected:
-            self.tello.move_down(distance)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot move down: Drone must be connected and flying.")
+            return
+        self.tello.move_down(distance)
 
     def rotate_left(self, angle=30):
         """Rotate the drone counter-clockwise by the specified angle (in degrees)."""
-        if self.is_connected:
-            self.tello.rotate_counter_clockwise(angle)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot rotate left: Drone must be connected and flying.")
+            return
+        self.tello.rotate_counter_clockwise(angle)
 
     def rotate_right(self, angle=30):
         """Rotate the drone clockwise by the specified angle (in degrees)."""
-        if self.is_connected:
-            self.tello.rotate_clockwise(angle)
+        if not (self.is_connected and self.is_flying):
+            print("Cannot rotate right: Drone must be connected and flying.")
+            return
+        self.tello.rotate_clockwise(angle)
 
     def flip_left(self):
         """Command the drone to perform a left flip."""
-        if self.is_connected:
-            self.tello.flip_left()
+        if not (self.is_connected and self.is_flying):
+            print("Cannot flip left: Drone must be connected and flying.")
+            return
+        self.tello.flip_left()
 
     def flip_right(self):
         """Command the drone to perform a right flip."""
-        if self.is_connected:
-            self.tello.flip_right()
+        if not (self.is_connected and self.is_flying):
+            print("Cannot flip right: Drone must be connected and flying.")
+            return
+        self.tello.flip_right()
 
     def streamon(self):
         """Start the drone's video stream."""
@@ -244,6 +263,7 @@ class DroneController:
         """Stop the drone's video stream."""
         self.tello.streamoff()
         print("Real drone stream stopped")
+
 
 # =============================================================================
 # DroneConnectWorker: For asynchronous connection.
@@ -271,6 +291,7 @@ class DroneConnectWorker(QObject):
         except Exception as e:
             self.connect_error.emit(str(e))
 
+
 # =============================================================================
 # ConnectingDialog: A simple dialog to show while connecting.
 # =============================================================================
@@ -285,17 +306,22 @@ class ConnectingDialog(QDialog):
         # Optionally remove the close button by keeping the existing window flags.
         self.setWindowFlags(self.windowFlags())
         self.setModal(True)
+
         # Set up a vertical layout for the dialog contents.
         layout = QVBoxLayout()
+
         # Title and informative labels.
         title_label = QLabel("<h2>Connecting to Tello Drone</h2>")
         info_label = QLabel("Please wait while we establish a connection...")
+
         # An indeterminate progress bar (busy indicator).
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)  # Indeterminate mode.
         self.progress_bar.setTextVisible(False)
+
         # Add widgets to the layout.
         layout.addWidget(title_label)
         layout.addWidget(info_label)
         layout.addWidget(self.progress_bar)
+
         self.setLayout(layout)

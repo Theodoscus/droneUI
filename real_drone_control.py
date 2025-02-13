@@ -79,6 +79,10 @@ class DroneControlApp(QMainWindow):
         self.connection_check_timer = QTimer()
         self.connection_check_timer.timeout.connect(self.check_drone_connection)
         self.connection_check_timer.start(2000)
+        
+        self.history_timer = QTimer()
+        self.history_timer.timeout.connect(self.update_history_button)
+        self.history_timer.start(2000)
 
         # Mapping of keyboard keys to their corresponding drone control methods.
         self.key_pressed_mapping = {
@@ -256,7 +260,7 @@ class DroneControlApp(QMainWindow):
         self.history_button = QPushButton("View Flight History")
         self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.history_button.clicked.connect(self.view_flight_history)
-        self.history_button.setEnabled(False)
+        self.history_button.setEnabled(True)
         bottom_area_layout.addWidget(self.history_button)
 
         # Button to navigate to the homepage.
@@ -628,7 +632,7 @@ class DroneControlApp(QMainWindow):
             temperature = self.drone_controller.get_temperature()
             height = self.drone_controller.get_height()
             speed = self.drone_controller.get_speed_x()
-
+            self.update_history_button()
             # Update the battery progress bar.
             self.battery_bar.setValue(battery_level)
             # Show a warning if the battery level is critically low.
@@ -664,7 +668,7 @@ class DroneControlApp(QMainWindow):
         self.fullscreen_button.setEnabled(False)
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
         self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
-
+        self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
         try:
             self.drone_controller.takeoff()
             print("Drone takeoff successful.")
@@ -705,6 +709,7 @@ class DroneControlApp(QMainWindow):
             # Process the flight video and update flight history.
             self.process_flight_video(duration)
             self.update_history_button()
+            self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         except Exception as e:
             QMessageBox.critical(self, "Land Error", f"Unable to land: {e}")
 
@@ -731,8 +736,10 @@ class DroneControlApp(QMainWindow):
         runs_dir = os.path.join(self.field_path, "runs")
         if os.path.exists(runs_dir) and os.listdir(runs_dir):
             self.history_button.setEnabled(True)
+            self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         else:
             self.history_button.setEnabled(False)
+            self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
 
     def closeEvent(self, event):
         """Ensure all timers are stopped and drone is disconnected on close."""
@@ -861,6 +868,10 @@ class DroneControlApp(QMainWindow):
         """
         self.report_app = DroneReportApp(self.field_path)
         self.report_app.show()
+        self.stop_all_timers()
+        self.disconnect()
+        self.close()
+        
 
     def stop_all_timers(self):
         """
@@ -872,6 +883,7 @@ class DroneControlApp(QMainWindow):
         self.controller_timer.stop()
         self.stream_timer.stop()
         self.drone_controller.stop_recording()
+        self.history_timer.stop()
 
         if self.drone_controller.is_connected:
             try:
