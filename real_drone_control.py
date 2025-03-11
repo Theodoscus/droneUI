@@ -3,6 +3,7 @@ import datetime
 import threading
 import platform
 import subprocess
+import queue
 
 # Pygame is used for joystick/controller support; OpenCV is used for image processing.
 import pygame
@@ -18,127 +19,235 @@ from PyQt6.QtCore import Qt, QTimer, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QImage, QPixmap
 
 # Import additional modules for reporting, video processing, and shared functionality.
-from report_gen import DroneReportApp
-from video_process import run
-from shared import open_homepage, open_full_screen
+from report_gen import DroneReportApp  # Module to generate flight reports
+from video_process import run         # Function to process the recorded flight video
+from shared import open_homepage, open_full_screen  # Shared functions for navigation
+
 # Import our separated drone-related functions (connection, control, etc.)
 from drone_functions import DroneController, DroneConnectWorker, ConnectingDialog
 
 
 # =============================================================================
-# Main Drone Control Application (UI remains unchanged)
+# Main Drone Control Application (UI)
 # =============================================================================
 class DroneControlApp(QMainWindow):
     def __init__(self, field_path):
         """
-        Initialize the DroneControlApp by setting up the window,
-        creating directories for flight data, initializing the drone,
-        setting up timers, and building the user interface.
+        Initializes the DroneControlApp:
+          - Sets up the main window properties and UI components.
+          - Creates folders to store flight data.
+          - Instantiates the drone and its controller.
+          - Sets up timers for flight duration, UI updates, controller input, and connection checks.
+          - Configures both keyboard and joystick controls.
+          
+        :param field_path: Base path for storing flight data and related files.
         """
         super().__init__()
+        # Set window title and dimensions.
         self.setWindowTitle("Drone Control")
-        self.setGeometry(100, 100, 1200, 800)  # Set the window position and size
+        self.setGeometry(100, 100, 1200, 800)
 
-        # Save the path to the field where flight data will be stored.
+        # Save the field path and create a folder for flights if it doesn't exist.
         self.field_path = field_path
         self.flights_folder = os.path.join(self.field_path, "flights")
-        os.makedirs(self.flights_folder, exist_ok=True)  # Ensure the flights folder exists
+        os.makedirs(self.flights_folder, exist_ok=True)
 
-        # Create an instance of the Tello drone and wrap it with our DroneController
+        # Create a Tello drone instance and wrap it with our DroneController for easier management.
         self.tello = Tello()
         self.drone_controller = DroneController(self.tello, self.flights_folder)
 
-        # Initialize flight and data states for UI tracking.
-        self.flight_duration = 0         # Total flight duration in seconds
-        self.flight_start_time = None    # Timestamp when the flight started
-        self.consecutive_ping_failures = 0  # Counter for consecutive ping failures (used to check connection health)
+        # Initialize flight tracking variables.
+        self.flight_duration = 0          # How long the flight has been in progress.
+        self.flight_start_time = None     # Timestamp for when the flight started.
+        self.consecutive_ping_failures = 0  # Counter for monitoring connection stability.
 
         # ---------------------------------------------------------------------
         # Timers Setup
         # ---------------------------------------------------------------------
-        # Timer to update the flight duration every second.
+        # Timer to update flight duration (once per second).
         self.flight_timer = QTimer()
         self.flight_timer.timeout.connect(self.update_flight_duration)
 
-        # Timer to update UI statistics (battery, etc.) every 3 seconds.
+        # Timer to update UI stats (e.g., battery level, temperature) every 3 seconds.
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui_stats)
-        self.ui_timer.start(3000)  # 3000 milliseconds = 3 seconds
+        self.ui_timer.start(3000)
 
-        # Initialize pygame for controller (joystick) support.
+        # Initialize Pygame to support joystick/controller input.
         pygame.init()
         pygame.joystick.init()
-        self.controller = None  # This will hold the joystick/controller instance if connected
+        self.controller = None  # This will hold our joystick if one is connected.
 
-        # Timer to poll the controller input frequently (every 20ms) for smooth responsiveness.
+        # Timer for polling joystick inputs (every 20 ms).
         self.controller_timer = QTimer()
         self.controller_timer.timeout.connect(self.poll_controller_input)
         self.controller_timer.start(20)
 
-        # Timer to check the drone connection status every 2 seconds.
+        # Timer to periodically check the drone connection (every 2 seconds).
         self.connection_check_timer = QTimer()
         self.connection_check_timer.timeout.connect(self.check_drone_connection)
         self.connection_check_timer.start(2000)
-        
+
+        # Timer to update the flight history button status (every 2 seconds).
         self.history_timer = QTimer()
         self.history_timer.timeout.connect(self.update_history_button)
         self.history_timer.start(2000)
 
-        # Mapping of keyboard keys to their corresponding drone control methods.
-        self.key_pressed_mapping = {
-            Qt.Key.Key_W: self.move_forward,
-            Qt.Key.Key_S: self.move_backward,
-            Qt.Key.Key_A: self.move_left,
-            Qt.Key.Key_D: self.move_right,
-            Qt.Key.Key_Q: self.flip_left,
-            Qt.Key.Key_E: self.flip_right,
-            Qt.Key.Key_Return: self.take_off,
-            Qt.Key.Key_P: self.land,
-            Qt.Key.Key_Up: self.move_up,
-            Qt.Key.Key_Down: self.move_down,
-            Qt.Key.Key_Left: self.rotate_left,
-            Qt.Key.Key_Right: self.rotate_right,
+        # Map keyboard keys to drone actions.
+        # Continuous actions (such as movement) are separate from discrete commands.
+        self.key_to_action = {
+            Qt.Key.Key_W: "Forward",
+            Qt.Key.Key_S: "Backward",
+            Qt.Key.Key_A: "Left",
+            Qt.Key.Key_D: "Right",
+            Qt.Key.Key_Up: "Up",
+            Qt.Key.Key_Down: "Down",
+            Qt.Key.Key_Left: "Rotate Left",
+            Qt.Key.Key_Right: "Rotate Right",
+            # Discrete commands:
+            Qt.Key.Key_Q: "Flip Left",
+            Qt.Key.Key_E: "Flip Right",
+            Qt.Key.Key_Return: "Take Off",
+            Qt.Key.Key_P: "Land"
         }
 
-        # Flag to enable/disable keyboard control.
+        # Enable keyboard control by default; also prepare a container for control buttons.
         self.keyboard_control_enabled = True
-        # Dictionary to store control buttons for later reference.
         self.control_buttons = {}
 
-        # Timer to update the video stream (drone camera feed) on the UI.
+        # Timer to update the video stream display (frequency set later).
         self.stream_timer = QTimer()
         self.stream_timer.timeout.connect(self.update_video_stream)
-        # Note: stream_timer is started after a successful connection.
 
-        # Build the user interface (UI layout, widgets, etc.)
+        # Set up a dedicated command queue and worker thread for discrete commands
+        # (commands like takeoff, landing, flips, etc.).
+        self.command_queue = queue.Queue(maxsize=1)
+        self.command_worker = threading.Thread(target=self.process_commands, daemon=True)
+        self.command_worker.start()
+
+        # ---------------------------------------------------------------------
+        # Continuous Movement Setup:
+        # Define continuous movement commands with preset speed values.
+        # ---------------------------------------------------------------------
+        self.speed = 30  # Speed value used for continuous control commands.
+        self.movement_actions = {
+            "Forward": lambda: self.drone_controller.send_continuous_control(0, self.speed, 0, 0),
+            "Backward": lambda: self.drone_controller.send_continuous_control(0, -self.speed, 0, 0),
+            "Left": lambda: self.drone_controller.send_continuous_control(-self.speed, 0, 0, 0),
+            "Right": lambda: self.drone_controller.send_continuous_control(self.speed, 0, 0, 0),
+            "Up": lambda: self.drone_controller.send_continuous_control(0, 0, self.speed, 0),
+            "Down": lambda: self.drone_controller.send_continuous_control(0, 0, -self.speed, 0),
+            "Rotate Left": lambda: self.drone_controller.send_continuous_control(0, 0, 0, -self.speed),
+            "Rotate Right": lambda: self.drone_controller.send_continuous_control(0, 0, 0, self.speed),
+        }
+        # A set of keys representing continuous actions.
+        self.continuous_actions = set(self.movement_actions.keys())
+        self.last_stop_sent = False  # Flag to ensure a stop command is sent only once.
+        self.active_movement = {}     # Dictionary to track which movement actions are active.
+        # Timer to process continuous movement commands every 100 ms.
+        self.continuous_timer = QTimer()
+        self.continuous_timer.timeout.connect(self.process_continuous_commands)
+        self.continuous_timer.start(100)
+
+        # Flag to lock new commands (used after takeoff or landing).
+        self.commands_locked = False
+        
+        # Initialize the UI, update controller status, and start connecting to the drone.
         self.init_ui()
-        # Check if any controller is connected and update UI accordingly.
         self.update_controller_status()
-
-        # Immediately try to connect to the drone asynchronously.
         self.connect_drone_async()
+
+    # ---------------------------------------------------------------------
+    # Command Queue and Executor Thread (for discrete commands)
+    # ---------------------------------------------------------------------
+    def process_commands(self):
+        """
+        Continuously processes commands from the queue in a separate thread.
+        This allows non-continuous (discrete) commands to be executed asynchronously.
+        """
+        while True:
+            command, args, kwargs = self.command_queue.get()
+            try:
+                # Execute the command function with its arguments.
+                command(*args, **kwargs)
+            except Exception as e:
+                print(f"Error executing command {command.__name__}: {e}")
+            self.command_queue.task_done()
+
+    def execute_command(self, command_func, *args, **kwargs):
+        """
+        Adds a command to the queue for execution if commands are not currently locked.
+        
+        :param command_func: The function representing the command.
+        :param args: Positional arguments for the command.
+        :param kwargs: Keyword arguments for the command.
+        """
+        if self.commands_locked:
+            print("Commands are currently locked. Ignoring command.")
+            return
+        try:
+            # If the queue is full, remove an old command to make room.
+            if self.command_queue.full():
+                try:
+                    self.command_queue.get(block=False)
+                    self.command_queue.task_done()
+                except queue.Empty:
+                    pass
+            self.command_queue.put((command_func, args, kwargs), block=False)
+        except queue.Full:
+            print("Command queue is unexpectedly full.")
+
+    # ---------------------------------------------------------------------
+    # Continuous Movement Processing
+    # ---------------------------------------------------------------------
+    def process_continuous_commands(self):
+        """
+        Processes continuous movement commands by sending velocity updates.
+        If no movement is active, it sends a stop command once.
+        """
+        # If no movement is active, send a stop command if not already sent.
+        if not any(self.active_movement.get(act, False) for act in self.continuous_actions):
+            if not self.last_stop_sent:
+                self.drone_controller.send_continuous_control(0, 0, 0, 0)
+                self.last_stop_sent = True
+            return
+        else:
+            # Reset flag if movement is active.
+            self.last_stop_sent = False
+        # For each active movement command, execute the corresponding command.
+        for action, active in self.active_movement.items():
+            if active and action in self.movement_actions:
+                self.execute_command(self.movement_actions[action])
+
+    def set_active_movement(self, action, state: bool):
+        """
+        Updates the active/inactive state for a given movement command.
+        
+        :param action: The movement action name (e.g., "Forward").
+        :param state: True if the movement is active, False if inactive.
+        """
+        self.active_movement[action] = state
 
     # ---------------------------------------------------------------------
     # UI Setup (Layout and Widgets)
     # ---------------------------------------------------------------------
     def init_ui(self):
         """
-        Create and configure the main UI layout, including the top area
-        (connection status, battery, stream) and bottom area (control buttons).
+        Constructs the user interface including layouts, labels, buttons, and panels.
         """
-        # Create the main widget and set it as the central widget of the window.
+        # Create the main widget and set it as the central widget.
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
 
-        # -------------------------------
-        # TOP AREA: Status and Stream
-        # -------------------------------
+        # --------------------------
+        # TOP AREA: Status and Video Stream
+        # --------------------------
         top_area_widget = QWidget()
         top_area_layout = QVBoxLayout(top_area_widget)
 
-        # Connection Status label: shows whether the drone is connected.
+        # Label to display the connection status (e.g., CONNECTED, DISCONNECTED).
         self.connection_status = QLabel("DISCONNECTED")
         self.connection_status.setStyleSheet(
             "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
@@ -147,28 +256,29 @@ class DroneControlApp(QMainWindow):
         self.connection_status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         top_area_layout.addWidget(self.connection_status)
 
-        # Notification label for critical warnings (e.g., low battery).
+        # Label for notifications such as battery warnings.
         self.notification_label = QLabel("")
         self.notification_label.setStyleSheet("color: red; font-size: 16px; font-weight: bold;")
         self.notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.notification_label.setVisible(False)
         top_area_layout.addWidget(self.notification_label)
-        
-        # Wi-Fi Connection Warning Label (new): alerts if the drone disconnects from WiFi.
+
+        # Label to show connection-specific messages (e.g., drone disconnected from WiFi).
         self.connection_notification_label = QLabel("")
         self.connection_notification_label.setStyleSheet("color: orange; font-size: 16px; font-weight: bold;")
         self.connection_notification_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.connection_notification_label.setVisible(False)
         top_area_layout.addWidget(self.connection_notification_label)
 
-        # Content Layout: Divides the top area into a left panel (controls/info) and the stream area.
+        # Create a horizontal layout to house the left panel and the video stream.
         content_layout = QHBoxLayout()
         top_area_layout.addLayout(content_layout)
 
-        # Left panel layout for battery, controller status, and drone info.
+        # --------------------------
+        # Left Panel: Drone Information
+        # --------------------------
         left_panel = QVBoxLayout()
-
-        # Battery box: shows current battery level.
+        # Battery GroupBox and progress bar.
         battery_box = QGroupBox("Battery")
         battery_layout = QVBoxLayout()
         self.battery_bar = QProgressBar()
@@ -180,7 +290,7 @@ class DroneControlApp(QMainWindow):
         battery_box.setFixedHeight(60)
         left_panel.addWidget(battery_box)
 
-        # Controller Status box: shows if a joystick/controller is connected.
+        # Controller Status GroupBox.
         controller_status_box = QGroupBox("Controller Status")
         controller_layout = QVBoxLayout()
         self.controller_status_label = QLabel("No Controller Connected")
@@ -190,7 +300,7 @@ class DroneControlApp(QMainWindow):
         controller_status_box.setFixedHeight(60)
         left_panel.addWidget(controller_status_box)
 
-        # Drone Info box: displays information like temperature, height, speed, etc.
+        # Drone Information GroupBox: Temperature, Height, Speed, etc.
         info_box = QGroupBox("Drone Info")
         info_layout = QVBoxLayout()
         self.info_labels = {
@@ -200,7 +310,7 @@ class DroneControlApp(QMainWindow):
             "Data Transmitted": QLabel("0 MB"),
             "Flight Duration": QLabel("0 sec"),
         }
-        # Create a row for each piece of info.
+        # Add each information row to the layout.
         for key, lbl in self.info_labels.items():
             row = QHBoxLayout()
             row.addWidget(QLabel(f"{key}:"))
@@ -210,14 +320,16 @@ class DroneControlApp(QMainWindow):
         info_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         left_panel.addWidget(info_box, stretch=1)
 
-        # Wrap left panel in a widget and add to the content layout.
+        # Wrap the left panel in its own widget and set size constraints.
         left_panel_widget = QWidget()
         left_panel_widget.setLayout(left_panel)
         left_panel_widget.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         left_panel_widget.setMaximumWidth(300)
         content_layout.addWidget(left_panel_widget, stretch=1)
 
-        # Stream Label: displays the video feed from the drone.
+        # --------------------------
+        # Right Panel: Video Stream Display
+        # --------------------------
         self.stream_label = QLabel("Drone Stream")
         self.stream_label.setStyleSheet(
             "background-color: #000; color: white; font-size: 14px; border: 1px solid #555;"
@@ -227,23 +339,25 @@ class DroneControlApp(QMainWindow):
         self.stream_label.setScaledContents(True)
         content_layout.addWidget(self.stream_label, stretch=3)
 
+        # Add the top area to the main layout.
         main_layout.addWidget(top_area_widget, stretch=3)
 
-        # -------------------------------
+        # --------------------------
         # BOTTOM AREA: Control Buttons & Navigation
-        # -------------------------------
+        # --------------------------
         bottom_area_widget = QWidget()
         bottom_area_layout = QVBoxLayout(bottom_area_widget)
 
-        # Layout for control buttons (for various drone operations).
+        # Layout for the control buttons.
         controls_layout = QVBoxLayout()
+        # Define rows of control buttons with key labels, associated actions, and optional colors.
         control_buttons = [
             [("Q", "Flip Left"), ("W", "Forward"), ("E", "Flip Right")],
             [("A", "Left"), ("S", "Backward"), ("D", "Right")],
             [("Enter", "Take Off", "green"), ("P", "Land", "red")],
             [("Up Arrow", "Up"), ("Down Arrow", "Down"), ("Left Arrow", "Rotate Left"), ("Right Arrow", "Rotate Right")],
         ]
-        # Create buttons row-by-row.
+        # Create buttons for each row and add them to the layout.
         for row in control_buttons:
             row_layout = QHBoxLayout()
             for button_spec in row:
@@ -254,29 +368,30 @@ class DroneControlApp(QMainWindow):
                 row_layout.addWidget(btn)
             controls_layout.addLayout(row_layout)
 
+        # Add the controls layout to the bottom area.
         bottom_area_layout.addLayout(controls_layout)
 
-        # Button to view flight history; initially disabled.
+        # Flight History Button.
         self.history_button = QPushButton("View Flight History")
         self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.history_button.clicked.connect(self.view_flight_history)
         self.history_button.setEnabled(True)
         bottom_area_layout.addWidget(self.history_button)
 
-        # Button to navigate to the homepage.
+        # Home Button.
         self.home_button = QPushButton("Αρχική Σελίδα")
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.home_button.clicked.connect(self.go_to_homepage)
         bottom_area_layout.addWidget(self.home_button)
 
-        # Button for full screen drone operation.
+        # Full Screen Drone Operation Button.
         self.fullscreen_button = QPushButton("Full Screen Drone Operation")
         self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
         self.fullscreen_button.setEnabled(True)
         self.fullscreen_button.clicked.connect(self.launch_fullscreen)
         bottom_area_layout.addWidget(self.fullscreen_button)
 
-        # Connect/Disconnect toggle button.
+        # Connect/Disconnect Button.
         self.connect_toggle_button = QPushButton("Connect")
         self.connect_toggle_button.setStyleSheet(
             "font-size: 16px; padding: 10px; background-color: green; color: white;"
@@ -284,22 +399,25 @@ class DroneControlApp(QMainWindow):
         self.connect_toggle_button.clicked.connect(self.toggle_connection)
         bottom_area_layout.addWidget(self.connect_toggle_button)
 
+        # Add the bottom area to the main layout.
         main_layout.addWidget(bottom_area_widget, stretch=1)
 
     # ---------------------------------------------------------------------
-    # Toggle Connection: Connect or disconnect the drone.
+    # Toggle Connection (Connect/Disconnect Drone)
     # ---------------------------------------------------------------------
     def toggle_connection(self):
-        """If connected, disconnect. If disconnected, reconnect asynchronously."""
+        """
+        Toggles the connection state: if the drone is connected, disconnect it;
+        otherwise, initiate a connection.
+        """
         if self.drone_controller.is_connected:
             self.disconnect_drone()
         else:
             self.connect_drone_async()
-            
+
     def disconnect_drone(self):
         """
-        Disconnect from the drone and update the UI.
-        This stops the video stream and resets connection status.
+        Disconnects the drone, stops video streaming, and updates the UI to reflect a disconnected state.
         """
         if self.drone_controller.is_connected:
             try:
@@ -307,39 +425,41 @@ class DroneControlApp(QMainWindow):
                 print("Drone stream turned off.")
             except Exception as e:
                 print("Error turning off drone stream:", e)
-            self.stream_timer.stop()  # Stop updating the video stream.
+            # Stop the video stream timer.
+            self.stream_timer.stop()
+            # Update the connection status label.
             self.connection_status.setText("DISCONNECTED")
             self.connection_status.setStyleSheet(
                 "background-color: red; color: white; font-size: 18px; font-weight: bold; border: 2px solid #555;"
             )
+            # Reset the connect toggle button.
             self.connect_toggle_button.setText("Connect")
             self.connect_toggle_button.setStyleSheet(
                 "font-size: 16px; padding: 10px; background-color: green; color: white;"
             )
+            # Clear any active continuous movement flags.
+            for act in self.continuous_actions:
+                self.set_active_movement(act, False)
         else:
             print("Drone already disconnected.")
 
     # ---------------------------------------------------------------------
-    # Asynchronous Drone Connection: Runs in a separate thread.
+    # Asynchronous Drone Connection
     # ---------------------------------------------------------------------
     def connect_drone_async(self):
         """
-        Attempt to connect to the drone asynchronously using a separate QThread.
-        This ensures that the UI remains responsive during the connection process.
+        Initiates an asynchronous connection to the drone using a QThread.
+        A connecting dialog is shown while the connection is being established.
         """
-        # Display a dialog to inform the user that connection is in progress.
         self.connecting_dialog = ConnectingDialog()
         self.connecting_dialog.show()
 
-        # Create a QThread and a worker to handle the connection process.
         self.connection_thread = QThread()
         self.connection_worker = DroneConnectWorker(self.drone_controller)
         self.connection_worker.moveToThread(self.connection_thread)
         self.connection_thread.started.connect(self.connection_worker.run)
-        # Connect signals for success and error handling.
         self.connection_worker.connect_success.connect(self.handle_connect_success)
         self.connection_worker.connect_error.connect(self.handle_connect_error)
-        # Also quit the thread when connection is done (either success or error).
         self.connection_worker.connect_success.connect(self.connection_thread.quit)
         self.connection_worker.connect_error.connect(self.connection_thread.quit)
         self.connection_thread.finished.connect(self.connection_thread.deleteLater)
@@ -347,8 +467,8 @@ class DroneControlApp(QMainWindow):
 
     def handle_connect_success(self):
         """
-        Callback function executed when the drone connects successfully.
-        Updates the UI elements and starts the video stream.
+        Called when the drone is connected successfully.
+        Updates the UI to show connected status, starts video streaming, and closes the connecting dialog.
         """
         self.connection_status.setText("CONNECTED")
         self.connection_status.setStyleSheet(
@@ -358,15 +478,16 @@ class DroneControlApp(QMainWindow):
         self.connect_toggle_button.setStyleSheet(
             "font-size: 16px; padding: 10px; background-color: red; color: white;"
         )
-        # Start the timer to update the video stream every 50ms.
-        self.stream_timer.start(50)
+        self.stream_timer.start(50)  # Start the video stream update timer.
         self.connecting_dialog.close()
         print("Drone connected successfully and stream is ON.")
 
     def handle_connect_error(self, error_message):
         """
-        Callback function executed when there is an error connecting to the drone.
-        Displays an error message and resets the UI.
+        Called if the drone connection fails.
+        Displays an error message and resets UI elements to reflect the disconnected state.
+        
+        :param error_message: The error message to display.
         """
         print("Error connecting to drone:", error_message)
         QMessageBox.critical(self, "Connection Error", f"Could not connect:\n{error_message}")
@@ -381,14 +502,15 @@ class DroneControlApp(QMainWindow):
         self.connecting_dialog.close()
 
     # ---------------------------------------------------------------------
-    # Check Drone Connection: Uses ping to verify if the drone is still reachable.
+    # Check Drone Connection (Ping Test)
     # ---------------------------------------------------------------------
     def check_drone_connection(self):
-        """Periodically ping the drone to verify connection status."""
+        """
+        Periodically pings the drone's IP to check connectivity.
+        If multiple consecutive pings fail, updates the UI to show the drone as disconnected.
+        """
         if not self.drone_controller.is_connected:
             return
-
-        # Use the ping_drone method to check connectivity.
         if not self.ping_drone("192.168.10.1"):
             self.consecutive_ping_failures += 1
             print(f"Ping failed ({self.consecutive_ping_failures} consecutive failure(s)).")
@@ -406,7 +528,6 @@ class DroneControlApp(QMainWindow):
                 self.connection_notification_label.setText("Drone disconnected from WiFi!")
                 self.connection_notification_label.setVisible(True)
         else:
-            # Reset the failure counter if the ping succeeds.
             if self.consecutive_ping_failures > 0:
                 print("Ping succeeded. Resetting failure counter.")
             self.consecutive_ping_failures = 0
@@ -415,10 +536,13 @@ class DroneControlApp(QMainWindow):
 
     def ping_drone(self, ip="192.168.10.1", count=1, timeout=1):
         """
-        Ping the drone using its IP address.
-        Returns True if the ping is successful, otherwise False.
+        Pings the drone to verify connectivity.
+        
+        :param ip: Drone's IP address.
+        :param count: Number of ping packets to send.
+        :param timeout: Timeout for each ping.
+        :return: True if ping is successful, otherwise False.
         """
-        # Determine the correct ping command parameter based on the operating system.
         param = '-n' if platform.system().lower() == 'windows' else '-c'
         if platform.system().lower() == "windows":
             command = ["ping", param, str(count), "-w", str(timeout * 1000), ip]
@@ -435,20 +559,21 @@ class DroneControlApp(QMainWindow):
     # ---------------------------------------------------------------------
     def launch_fullscreen(self):
         """
-        Stop all current timers, clean up pygame resources,
-        disconnect the drone, and open the full-screen drone operation window.
+        Launches a full-screen drone operation window.
+        Stops all timers and disconnects the drone before transitioning.
         """
         self.stop_all_timers()
         pygame.joystick.quit()
         pygame.quit()
         self.disconnect_drone()
+        QTimer(2000)
         self.fullscreen_window = open_full_screen(self.field_path)
         self.fullscreen_window.show()
         self.close()
 
     def center_window(self):
         """
-        Center the window on the screen.
+        Centers the main window on the primary screen.
         """
         self.show()
         self.updateGeometry()
@@ -458,12 +583,12 @@ class DroneControlApp(QMainWindow):
         self.move(center_x, center_y)
 
     # ---------------------------------------------------------------------
-    # Controller Management: Handling joystick/controller inputs.
+    # Controller Management (Joystick/Keyboard)
     # ---------------------------------------------------------------------
     def update_controller_status(self):
         """
-        Check if a joystick/controller is connected.
-        Update the UI and enable/disable keyboard controls accordingly.
+        Checks whether a joystick/controller is connected.
+        Updates the controller status label and disables keyboard controls if a controller is present.
         """
         if pygame.joystick.get_count() > 0:
             if not self.controller:
@@ -471,7 +596,6 @@ class DroneControlApp(QMainWindow):
                 self.controller.init()
             self.controller_status_label.setText("Controller Connected")
             self.controller_status_label.setStyleSheet("color: green; font-size: 14px; font-weight: bold;")
-            # Disable on-screen control buttons when a physical controller is connected.
             self.set_controls_enabled(False)
         else:
             self.controller = None
@@ -481,8 +605,9 @@ class DroneControlApp(QMainWindow):
 
     def set_controls_enabled(self, enabled: bool):
         """
-        Enable or disable all control buttons on the UI.
-        Also sets whether keyboard controls are active.
+        Enables or disables the control buttons and keyboard input.
+        
+        :param enabled: True to enable controls; False to disable.
         """
         for button in self.control_buttons.values():
             button.setEnabled(enabled)
@@ -490,17 +615,13 @@ class DroneControlApp(QMainWindow):
 
     def poll_controller_input(self):
         """
-        Poll for controller events (button presses or joystick movements)
-        and handle them appropriately.
+        Polls for joystick/controller events and processes them.
         """
-        pygame.event.pump()
+        pygame.event.pump()  # Process internal events.
         controller_count = pygame.joystick.get_count()
-        # Update controller status if there's a change in connection.
         if (self.controller and controller_count == 0) or (not self.controller and controller_count > 0):
             self.update_controller_status()
-
         if self.controller:
-            # Process each event from the controller.
             for event in pygame.event.get():
                 if event.type == pygame.JOYBUTTONDOWN:
                     self.handle_button_press(event.button)
@@ -509,12 +630,9 @@ class DroneControlApp(QMainWindow):
 
     def handle_button_press(self, button):
         """
-        Map joystick button presses to drone commands.
-        Button mappings:
-            0: Take Off
-            1: Land
-            2: Flip Left
-            3: Flip Right
+        Maps joystick button presses to drone actions.
+        
+        :param button: The index of the button pressed.
         """
         if button == 0:  # A button
             self.take_off()
@@ -527,103 +645,156 @@ class DroneControlApp(QMainWindow):
 
     def handle_axis_motion(self, axis, value):
         """
-        Map joystick axis movements to drone movement commands.
-        Axis mappings:
-            0: Left horizontal (move left/right)
-            1: Left vertical (move forward/backward)
-            2: Right horizontal (rotate left/right)
-            3: Right vertical (move up/down)
+        Processes joystick axis movements to update continuous movement states.
+        
+        :param axis: The axis index.
+        :param value: The value from the axis (typically between -1 and 1).
         """
-        if axis == 0:  # Left horizontal axis
+        if axis == 1:
             if value < -0.5:
-                self.move_left()
+                self.set_active_movement("Forward", True)
+                self.set_active_movement("Backward", False)
             elif value > 0.5:
-                self.move_right()
-        elif axis == 1:  # Left vertical axis
+                self.set_active_movement("Backward", True)
+                self.set_active_movement("Forward", False)
+            else:
+                self.set_active_movement("Forward", False)
+                self.set_active_movement("Backward", False)
+        elif axis == 0:
             if value < -0.5:
-                self.move_forward()
+                self.set_active_movement("Left", True)
+                self.set_active_movement("Right", False)
             elif value > 0.5:
-                self.move_backward()
-        elif axis == 2:  # Right horizontal axis
+                self.set_active_movement("Right", True)
+                self.set_active_movement("Left", False)
+            else:
+                self.set_active_movement("Left", False)
+                self.set_active_movement("Right", False)
+        elif axis == 2:
             if value < -0.5:
-                self.rotate_left()
+                self.set_active_movement("Rotate Left", True)
+                self.set_active_movement("Rotate Right", False)
             elif value > 0.5:
-                self.rotate_right()
-        elif axis == 3:  # Right vertical axis
+                self.set_active_movement("Rotate Right", True)
+                self.set_active_movement("Rotate Left", False)
+            else:
+                self.set_active_movement("Rotate Left", False)
+                self.set_active_movement("Rotate Right", False)
+        elif axis == 3:
             if value < -0.5:
-                self.move_up()
+                self.set_active_movement("Up", True)
+                self.set_active_movement("Down", False)
             elif value > 0.5:
-                self.move_down()
+                self.set_active_movement("Down", True)
+                self.set_active_movement("Up", False)
+            else:
+                self.set_active_movement("Up", False)
+                self.set_active_movement("Down", False)
 
     # ---------------------------------------------------------------------
-    # Control Buttons: Creating and handling on-screen control buttons.
+    # Control Buttons
     # ---------------------------------------------------------------------
     def create_control_button(self, key: str, action: str, color=None) -> QPushButton:
         """
-        Create a QPushButton for a specific drone action.
-        The button displays the key and the action. An optional color can be specified.
+        Creates a button for controlling the drone with a specified key, action, and optional color.
+        
+        :param key: The keyboard key representation (e.g., "W").
+        :param action: The associated action (e.g., "Forward").
+        :param color: Optional background color for the button.
+        :return: The created QPushButton.
         """
         btn = QPushButton(f"{key}\n({action})")
         if color:
             btn.setStyleSheet(f"background-color: {color}; color: white; font-weight: bold;")
-        # Connect the button click to the corresponding action method.
-        btn.clicked.connect(self.create_button_handler(action))
-        # Save the button in a dictionary for later reference.
+        # If this is a continuous action, bind press and release events.
+        if action in self.continuous_actions:
+            btn.pressed.connect(lambda act=action: self.set_active_movement(act, True))
+            btn.released.connect(lambda act=action: self.set_active_movement(act, False))
+        else:
+            # For discrete actions, connect the button click to the appropriate handler.
+            btn.clicked.connect(self.create_button_handler(action))
         self.control_buttons[action] = btn
         return btn
 
     def create_button_handler(self, action: str):
         """
-        Return a handler function that calls the appropriate drone command based on the action.
+        Returns a function that handles button clicks for discrete actions.
+        
+        :param action: The action name (e.g., "Take Off").
+        :return: A function that calls the associated command.
         """
         def handler():
-            # Map action text to the corresponding method.
-            action_methods = {
+            discrete_actions = {
                 "Flip Left": self.flip_left,
-                "Forward": self.move_forward,
                 "Flip Right": self.flip_right,
-                "Left": self.move_left,
-                "Backward": self.move_backward,
-                "Right": self.move_right,
                 "Take Off": self.take_off,
                 "Land": self.land,
-                "Up": self.move_up,
-                "Down": self.move_down,
-                "Rotate Left": self.rotate_left,
-                "Rotate Right": self.rotate_right,
             }
-            method = action_methods.get(action)
-            if callable(method):
-                method()
+            if action in discrete_actions:
+                discrete_actions[action]()
             else:
-                print(f"Warning: No method mapped for '{action}'")
+                # For actions that are not explicitly discrete, simulate a quick activation.
+                self.set_active_movement(action, True)
+                QTimer.singleShot(200, lambda: self.set_active_movement(action, False))
         return handler
 
     def keyPressEvent(self, event: QKeyEvent):
         """
-        Overridden method to handle keyboard events.
-        Executes a mapped action if the pressed key exists in key_pressed_mapping.
+        Processes key press events for keyboard control.
+        
+        :param event: The QKeyEvent instance.
+        """
+        if self.commands_locked:
+            return
+        if not self.keyboard_control_enabled:
+            return
+        if event.isAutoRepeat():
+            return
+        key = event.key()
+        if key in self.key_to_action:
+            action = self.key_to_action[key]
+            if action in self.continuous_actions:
+                self.set_active_movement(action, True)
+            else:
+                if action == "Flip Left":
+                    self.flip_left()
+                elif action == "Flip Right":
+                    self.flip_right()
+                elif action == "Take Off":
+                    self.take_off()
+                elif action == "Land":
+                    self.land()
+
+    def keyReleaseEvent(self, event: QKeyEvent):
+        """
+        Processes key release events to stop continuous actions.
+        
+        :param event: The QKeyEvent instance.
         """
         if not self.keyboard_control_enabled:
             return
-        if event.key() in self.key_pressed_mapping:
-            self.key_pressed_mapping[event.key()]()
+        if event.isAutoRepeat():
+            return
+        key = event.key()
+        if key in self.key_to_action:
+            action = self.key_to_action[key]
+            if action in self.continuous_actions:
+                self.set_active_movement(action, False)
 
     # ---------------------------------------------------------------------
     # Flight Duration & Stats Updates
     # ---------------------------------------------------------------------
     def update_flight_duration(self):
         """
-        Increment the flight duration counter by one second.
-        Also update the flight duration label on the UI.
+        Increments the flight duration counter and updates the associated UI label.
         """
         self.flight_duration += 1
         self.info_labels["Flight Duration"].setText(f"{self.flight_duration} sec")
 
     def update_ui_stats(self):
         """
-        Update various UI elements such as battery level, temperature, height, and speed.
-        This method is called periodically by ui_timer.
+        Retrieves the latest statistics from the drone (battery, temperature, etc.)
+        and updates the UI accordingly.
         """
         if not self.drone_controller.is_connected:
             return
@@ -633,16 +804,12 @@ class DroneControlApp(QMainWindow):
             height = self.drone_controller.get_height()
             speed = self.drone_controller.get_speed_x()
             self.update_history_button()
-            # Update the battery progress bar.
             self.battery_bar.setValue(battery_level)
-            # Show a warning if the battery level is critically low.
             if battery_level < 20:
                 self.notification_label.setText("Warning: Battery level is critically low!")
                 self.notification_label.setVisible(True)
             else:
                 self.notification_label.setVisible(False)
-
-            # Update the info labels with current drone stats.
             self.info_labels["Temperature"].setText(f"{temperature}°C")
             self.info_labels["Height"].setText(f"{height} cm")
             self.info_labels["Speed"].setText(f"{speed} cm/s")
@@ -651,72 +818,113 @@ class DroneControlApp(QMainWindow):
             print("Failed to get Tello state:", e)
 
     # ---------------------------------------------------------------------
-    # Flight Operations: Commands to take off, land, and process flight data.
+    # Flight Operations (Take Off, Land, etc.)
     # ---------------------------------------------------------------------
     def take_off(self):
         """
-        Command the drone to take off.
-        Disables some buttons during flight and starts tracking flight duration.
+        Handles the drone's takeoff sequence:
+          - Checks if the drone is connected.
+          - Clears active movement flags.
+          - Disables navigation buttons.
+          - Sends the takeoff command.
+          - Locks further commands for 5 seconds to allow the drone to initialize.
+          - Starts flight duration tracking.
         """
         if not self.drone_controller.is_connected:
             QMessageBox.warning(self, "Drone Disconnected", "Cannot take off because the drone is not connected.")
             return
+        if self.commands_locked:
+            return  # Ignore input if commands are locked
 
-        # Disable buttons during flight to prevent conflicting commands.
+        # Clear any active continuous movement commands.
+        for act in self.continuous_actions:
+            self.set_active_movement(act, False)
+        # Disable navigation and history buttons during takeoff.
         self.history_button.setEnabled(False)
         self.home_button.setEnabled(False)
         self.fullscreen_button.setEnabled(False)
         self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
         self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
         self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
-        try:
-            self.drone_controller.takeoff()
-            print("Drone takeoff successful.")
-
-            self.flight_timer.start(1000)  # Start tracking flight duration (every second).
-            self.flight_duration = 0
-            self.flight_start_time = datetime.datetime.now()
-        except Exception as e:
-            QMessageBox.critical(self, "Take Off Error", f"Unable to take off: {e}")
+        
+        # Send the takeoff command to the drone.
+        self.execute_command(self.drone_controller.takeoff)
+        self.commands_locked = True  # Lock commands to prevent additional input during initialization
+        print("Drone takeoff command sent.")
+        self.flight_timer.start(1000)  # Start the flight duration timer
+        self.flight_duration = 0  # Reset the flight duration counter
+        self.flight_start_time = datetime.datetime.now()  # Record the start time of the flight
+        # Re-enable commands after a 5-second delay.
+        QTimer.singleShot(5000, self.unlock_commands)
 
     def land(self):
         """
-        Command the drone to land.
-        Stops flight duration tracking and processes the flight video.
+        Handles the drone's landing sequence:
+          - Checks if the drone is connected.
+          - Sends the landing command.
+          - Locks commands for 5 seconds to allow the drone to finalize landing.
+          - Stops the flight duration timer.
+          - Calculates flight duration and displays it.
+          - Initiates flight video processing.
+          - Re-enables navigation buttons.
         """
         if not self.drone_controller.is_connected:
             QMessageBox.warning(self, "Drone Disconnected", "Cannot land because the drone is not connected.")
             return
+        if self.commands_locked:
+            return  # Prevent further input if commands are locked
 
-        try:
-            self.drone_controller.land()
-            print("Drone landing...")
+        self.execute_command(self.drone_controller.land)
+        self.commands_locked = True  # Lock commands during landing finalization
+        print("Drone landing command sent.")
+        self.flight_timer.stop()  # Stop the flight duration timer
+        self.flight_end_time = datetime.datetime.now()  # Record the end time
+        duration = self.flight_end_time - self.flight_start_time  # Calculate flight duration
+        QMessageBox.information(self, "Flight Completed", f"Flight duration: {duration}")
+        print(f"Flight data saved in: {self.drone_controller.current_flight_folder}")
+        # Re-enable navigation buttons.
+        self.home_button.setEnabled(True)
+        self.fullscreen_button.setEnabled(True)
+        self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
+        self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
+        # Start processing the flight video.
+        self.process_flight_video(duration)
+        self.update_history_button()
+        self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
+        # Clear any active continuous movement commands.
+        for act in self.continuous_actions:
+            self.set_active_movement(act, False)
+        # Re-enable commands after a 5-second delay.
+        QTimer.singleShot(5000, self.unlock_commands)
 
-            self.flight_timer.stop()  # Stop the flight duration timer.
-            self.flight_end_time = datetime.datetime.now()
-            duration = self.flight_end_time - self.flight_start_time
-
-            # Inform the user about the completed flight duration.
-            QMessageBox.information(self, "Flight Completed", f"Flight duration: {duration}")
-            print(f"Flight data saved in: {self.drone_controller.current_flight_folder}")
-
-            # Re-enable navigation buttons.
-            self.home_button.setEnabled(True)
-            self.fullscreen_button.setEnabled(True)
-            self.home_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
-            self.fullscreen_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
-
-            # Process the flight video and update flight history.
-            self.process_flight_video(duration)
-            self.update_history_button()
-            self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: #007BFF; color: white;")
-        except Exception as e:
-            QMessageBox.critical(self, "Land Error", f"Unable to land: {e}")
+    def unlock_commands(self):
+        """
+        Unlocks the command input, allowing new commands to be processed.
+        """
+        self.commands_locked = False
+        print("Commands unlocked after delay.")
 
     def process_flight_video(self, duration):
         """
-        Process the flight video using the external video processing function.
-        If processing is successful, disconnect the drone and close the app.
+        Initiates processing of the flight video:
+          - Stops recording to ensure the video file is properly finalized.
+          - After a 1-second delay (to allow file release), starts the video processing routine.
+          
+        :param duration: Duration of the flight.
+        """
+        # Stop recording to release the VideoWriter.
+        self.drone_controller.stop_recording()
+        
+        # Wait 1 second to ensure the VideoWriter is fully released.
+        QTimer.singleShot(1000, lambda: self.start_video_processing(duration))
+
+    def start_video_processing(self, duration):
+        """
+        Processes the flight video file.
+        If the video file exists, it runs the processing function,
+        then disconnects the drone and closes the UI.
+        
+        :param duration: Duration of the flight.
         """
         video_path = os.path.join(self.drone_controller.current_flight_folder, "flight_video.mp4")
         if os.path.exists(video_path):
@@ -731,7 +939,7 @@ class DroneControlApp(QMainWindow):
 
     def update_history_button(self):
         """
-        Enable the 'View Flight History' button if there is flight history available.
+        Updates the flight history button's enabled state and appearance based on whether there are stored flight runs.
         """
         runs_dir = os.path.join(self.field_path, "runs")
         if os.path.exists(runs_dir) and os.listdir(runs_dir):
@@ -742,120 +950,62 @@ class DroneControlApp(QMainWindow):
             self.history_button.setStyleSheet("font-size: 16px; padding: 10px; background-color: lightgray; color: gray;")
 
     def closeEvent(self, event):
-        """Ensure all timers are stopped and drone is disconnected on close."""
+        """
+        Handles the window close event:
+          - Stops all timers.
+          - Disconnects the drone.
+          - Calls the superclass's closeEvent.
+        """
         self.stop_all_timers()
         self.disconnect_drone()
         super().closeEvent(event)
     
     # ---------------------------------------------------------------------
-    # Video Stream: Fetch and display the video feed from the drone.
+    # Video Stream Handling
     # ---------------------------------------------------------------------
     def update_video_stream(self):
         """
-        Get the latest frame from the drone and display it on the stream label.
-        Also, record the frame if recording is active.
+        Retrieves a frame from the drone's video stream, converts it to a QImage,
+        displays it in the UI, and records it for later video processing.
         """
         if not self.drone_controller.is_connected:
             return
         frame = self.drone_controller.get_frame()
         if frame is None:
             return
-
-        # Convert the raw frame (assumed RGB) to a QImage, then to a QPixmap for display.
+        # Convert the frame (numpy array) to a QImage.
         height, width, channels = frame.shape
         bytes_per_line = channels * width
-        q_img = QImage(
-            frame.data,
-            width,
-            height,
-            bytes_per_line,
-            QImage.Format.Format_RGB888
-        )
+        q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(q_img)
         self.stream_label.setPixmap(pixmap)
-
-        # If recording is enabled, record the frame.
+        # Save the frame for the flight video.
         self.drone_controller.record_frame(frame)
 
-    # ---------------------------------------------------------------------
-    # Movement Commands: Forward, backward, left, right, up, down, rotate, flip.
-    # ---------------------------------------------------------------------
-    def move_forward(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_forward()
-            except Exception as e:
-                print(f"Failed to move forward: {e}")
-
-    def move_backward(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_backward()
-            except Exception as e:
-                print(f"Failed to move backward: {e}")
-
-    def move_left(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_left()
-            except Exception as e:
-                print(f"Failed to move left: {e}")
-
-    def move_right(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_right()
-            except Exception as e:
-                print(f"Failed to move right: {e}")
-
-    def move_up(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_up()
-            except Exception as e:
-                print(f"Failed to move up: {e}")
-
-    def move_down(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.move_down()
-            except Exception as e:
-                print(f"Failed to move down: {e}")
-
-    def rotate_left(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.rotate_left()
-            except Exception as e:
-                print(f"Failed to rotate left: {e}")
-
-    def rotate_right(self):
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.rotate_right()
-            except Exception as e:
-                print(f"Failed to rotate right: {e}")
-
+    # --- Non-continuous movement methods (for discrete triggers) ---
     def flip_left(self):
+        """
+        Executes the drone's flip left maneuver if connected.
+        """
         if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.flip_left()
-            except Exception as e:
-                print(f"Failed to flip left: {e}")
+            self.execute_command(self.drone_controller.flip_left)
 
     def flip_right(self):
+        """
+        Executes the drone's flip right maneuver if connected.
+        """
         if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.flip_right()
-            except Exception as e:
-                print(f"Failed to flip right: {e}")
+            self.execute_command(self.drone_controller.flip_right)
 
     # ---------------------------------------------------------------------
-    # Navigation to Other Pages: Homepage and Flight History.
+    # Navigation to Other Pages
     # ---------------------------------------------------------------------
     def go_to_homepage(self):
         """
-        Stop all timers and open the homepage.
+        Navigates to the home page:
+          - Stops all timers.
+          - Opens the homepage.
+          - Closes the current drone control UI.
         """
         self.stop_all_timers()
         self.home_page = open_homepage()
@@ -864,19 +1014,22 @@ class DroneControlApp(QMainWindow):
 
     def view_flight_history(self):
         """
-        Open the flight history report window.
+        Opens the flight history/report application:
+          - Shows the report window.
+          - Stops all timers.
+          - Disconnects the drone.
+          - Closes the current UI.
         """
         self.report_app = DroneReportApp(self.field_path)
         self.report_app.show()
         self.stop_all_timers()
-        self.disconnect()
+        self.disconnect_drone()
         self.close()
         
-
     def stop_all_timers(self):
         """
-        Stop all active timers and recording processes.
-        Also, attempt to turn off the Tello stream if connected.
+        Stops all running timers and halts video recording.
+        Also attempts to turn off the drone's video stream.
         """
         self.flight_timer.stop()
         self.ui_timer.stop()
@@ -884,26 +1037,9 @@ class DroneControlApp(QMainWindow):
         self.stream_timer.stop()
         self.drone_controller.stop_recording()
         self.history_timer.stop()
-
         if self.drone_controller.is_connected:
             try:
                 self.drone_controller.tello.streamoff()
                 print("Tello stream is OFF.")
             except Exception as e:
                 print(f"Error turning stream off: {e}")
-
-
-# =============================================================================
-# Main entry point (for testing)
-# =============================================================================
-# if __name__ == "__main__":
-#     import sys
-#     # Create the QApplication instance.
-#     app = QApplication(sys.argv)
-#     # Define the field path where flight data will be stored (adjust as necessary).
-#     field_path = os.path.abspath("fields/field1")
-#     # Create the main DroneControlApp window.
-#     window = DroneControlApp(field_path)
-#     window.show()
-#     # Start the event loop.
-#     sys.exit(app.exec())

@@ -12,8 +12,7 @@ class DroneController:
     """
     Encapsulates all drone-control functionality independent of the UI.
     This class wraps connection, movement, flight operations, and video recording.
-    It maintains an internal 'is_flying' flag (and retries landing once) so that
-    takeoff and landing occur only once.
+    It maintains an internal 'is_flying' flag so that takeoff and landing occur only once.
     """
     def __init__(self, tello: Tello, flights_folder: str):
         # Store the Tello instance and the folder where flight data will be saved.
@@ -103,6 +102,19 @@ class DroneController:
             return self.frame_read.frame
         return None
 
+    # ----- New: Continuous Control Method -----
+    def send_continuous_control(self, lr, fb, ud, yaw):
+        """
+        Send a continuous control command by setting velocities.
+        lr: Left/right velocity (-100 to 100; negative for left)
+        fb: Forward/backward velocity (-100 to 100; positive for forward)
+        ud: Up/down velocity (-100 to 100; positive for up)
+        yaw: Yaw (rotation) velocity (-100 to 100; positive for clockwise)
+        """
+        if not (self.is_connected and self.is_flying):
+            return
+        self.tello.send_rc_control(lr, fb, ud, yaw)
+
     # ----- Video Recording Methods -----
     def start_recording(self):
         """
@@ -150,7 +162,6 @@ class DroneController:
             raise Exception("Drone is already in flight")
         self.tello.takeoff()
         self.flight_start_time = datetime.datetime.now()
-        # Create a unique folder for this flight using the current timestamp.
         timestamp = self.flight_start_time.strftime("%Y%m%d_%H%M%S")
         self.current_flight_folder = os.path.join(self.flights_folder, f"flight_{timestamp}")
         os.makedirs(self.current_flight_folder, exist_ok=True)
@@ -167,7 +178,6 @@ class DroneController:
             raise Exception("Drone not connected")
         if not self.is_flying:
             raise Exception("Drone is already landed")
-        # Try landing up to two times.
         for attempt in range(2):
             try:
                 self.tello.land()
@@ -177,68 +187,12 @@ class DroneController:
             except Exception as e:
                 print(f"Landing attempt {attempt + 1} failed: {e}")
                 if attempt == 0:
-                    # Wait a short moment before retrying.
                     import time
                     time.sleep(1)
                 else:
                     raise Exception("Landing failed on both attempts.")
 
-    # ----- Movement Commands -----
-    def move_forward(self, distance=30):
-        """Move the drone forward by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move forward: Drone must be connected and flying.")
-            return
-        self.tello.move_forward(distance)
-
-    def move_backward(self, distance=30):
-        """Move the drone backward by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move backward: Drone must be connected and flying.")
-            return
-        self.tello.move_back(distance)
-
-    def move_left(self, distance=30):
-        """Move the drone to the left by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move left: Drone must be connected and flying.")
-            return
-        self.tello.move_left(distance)
-
-    def move_right(self, distance=30):
-        """Move the drone to the right by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move right: Drone must be connected and flying.")
-            return
-        self.tello.move_right(distance)
-
-    def move_up(self, distance=30):
-        """Move the drone upward by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move up: Drone must be connected and flying.")
-            return
-        self.tello.move_up(distance)
-
-    def move_down(self, distance=30):
-        """Move the drone downward by the specified distance (in centimeters)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot move down: Drone must be connected and flying.")
-            return
-        self.tello.move_down(distance)
-
-    def rotate_left(self, angle=30):
-        """Rotate the drone counter-clockwise by the specified angle (in degrees)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot rotate left: Drone must be connected and flying.")
-            return
-        self.tello.rotate_counter_clockwise(angle)
-
-    def rotate_right(self, angle=30):
-        """Rotate the drone clockwise by the specified angle (in degrees)."""
-        if not (self.is_connected and self.is_flying):
-            print("Cannot rotate right: Drone must be connected and flying.")
-            return
-        self.tello.rotate_clockwise(angle)
+    # ----- Discrete Movement Commands (for non-held triggers) -----
 
     def flip_left(self):
         """Command the drone to perform a left flip."""
@@ -263,7 +217,6 @@ class DroneController:
         """Stop the drone's video stream."""
         self.tello.streamoff()
         print("Real drone stream stopped")
-
 
 # =============================================================================
 # DroneConnectWorker: For asynchronous connection.
