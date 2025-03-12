@@ -566,7 +566,7 @@ class DroneControlApp(QMainWindow):
         pygame.joystick.quit()
         pygame.quit()
         self.disconnect_drone()
-        QTimer(2000)
+        
         self.fullscreen_window = open_full_screen(self.field_path)
         self.fullscreen_window.show()
         self.close()
