@@ -4,6 +4,7 @@ import threading
 import platform
 import subprocess
 import queue
+import time
 
 # Pygame is used for joystick/controller support; OpenCV is used for image processing.
 import pygame
@@ -566,6 +567,8 @@ class DroneControlApp(QMainWindow):
         pygame.joystick.quit()
         pygame.quit()
         self.disconnect_drone()
+        time.sleep(2)
+        
         
         self.fullscreen_window = open_full_screen(self.field_path)
         self.fullscreen_window.show()

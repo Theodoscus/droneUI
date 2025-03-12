@@ -4,6 +4,7 @@ import cv2
 from djitellopy import Tello
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import QObject, pyqtSignal
+import time
 
 # ---------------------------------------------------------------------
 # DroneController: Handles all direct drone operations.
@@ -18,6 +19,8 @@ class DroneController:
         # Store the Tello instance and the folder where flight data will be saved.
         self.tello = tello
         self.flights_folder = flights_folder
+        
+        
 
         # Connection and recording states.
         self.is_connected = False
@@ -35,14 +38,19 @@ class DroneController:
 
         # Flag to indicate whether the drone is currently flying.
         self.is_flying = False
+        self.count = 1
+        
 
     def connect(self):
+        
+        
         """
         Connect to the drone and initialize the video stream.
         It validates the response from the Tello, starts video streaming,
         and sets the 'is_connected' flag.
         """
         try:
+            
             raw_response = self.tello.connect()
             # In some cases the response might be a tuple or list.
             if isinstance(raw_response, (tuple, list)):
@@ -57,8 +65,16 @@ class DroneController:
                     raise Exception(response_str)
             # Start the video stream from the drone.
             self.tello.streamon()
-            self.frame_read = self.tello.get_frame_read()
+            time.sleep(2)
             self.is_connected = True
+            if self.count == 1:
+                if self.is_connected:
+                        self.frame_read = self.tello.get_frame_read()
+                else:
+                        self.frame_read = None
+                
+            self.count+=1
+            
         except Exception as e:
             raise Exception(f"Drone connection failed: {e}")
 
@@ -69,9 +85,9 @@ class DroneController:
         """
         if self.is_connected:
             try:
+                
+                
                 self.tello.streamoff()
-                if self.frame_read:
-                    self.frame_read.stop()
             except Exception as e:
                 print("Error turning off drone stream:", e)
             self.is_connected = False
@@ -98,6 +114,8 @@ class DroneController:
         Retrieve the latest video frame from the drone's camera.
         Returns None if the frame reader is not initialized.
         """
+        
+            
         if self.frame_read is not None:
             return self.frame_read.frame
         return None
@@ -240,6 +258,7 @@ class DroneConnectWorker(QObject):
         """
         try:
             self.drone_controller.connect()
+            
             self.connect_success.emit()
         except Exception as e:
             self.connect_error.emit(str(e))

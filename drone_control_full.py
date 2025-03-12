@@ -6,6 +6,7 @@ import subprocess
 import platform
 import queue
 import threading
+import time
 
 # Pygame is used for joystick/keyboard inputs and OpenCV for image/video processing.
 import pygame
@@ -125,7 +126,7 @@ class DroneOperatingPage(QWidget):
 
         # Initialize state variables for flight duration and battery level.
         self.flight_duration = 0
-        self.battery_level = 100
+        self.battery_level = 0
 
         # Dictionary to store button states for debouncing joystick inputs.
         self.button_states = {}
@@ -497,6 +498,8 @@ class DroneOperatingPage(QWidget):
         if self.drone_controller.is_connected:
             self.drone_controller.streamoff()
             self.drone_controller.disconnect()
+        
+        time.sleep(2)
 
         self.windowed_ui = open_real_drone_control(self.field_path)
         self.windowed_ui.show()
