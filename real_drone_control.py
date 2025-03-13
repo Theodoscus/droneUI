@@ -5,6 +5,7 @@ import platform
 import subprocess
 import queue
 import time
+import logging
 
 # Pygame is used for joystick/controller support; OpenCV is used for image processing.
 import pygame
@@ -52,15 +53,20 @@ class DroneControlApp(QMainWindow):
         self.field_path = field_path
         self.flights_folder = os.path.join(self.field_path, "flights")
         os.makedirs(self.flights_folder, exist_ok=True)
+        
 
         # Create a Tello drone instance and wrap it with our DroneController for easier management.
         self.tello = Tello()
         self.drone_controller = DroneController(self.tello, self.flights_folder)
 
         # Initialize flight tracking variables.
+        
         self.flight_duration = 0          # How long the flight has been in progress.
         self.flight_start_time = None     # Timestamp for when the flight started.
         self.consecutive_ping_failures = 0  # Counter for monitoring connection stability.
+        self.wifi_signal = "N/A"
+        self.wifi_thread = threading.Thread(target=self.poll_wifi_signal, daemon=True)
+        self.wifi_thread.start()
 
         # ---------------------------------------------------------------------
         # Timers Setup
@@ -161,33 +167,31 @@ class DroneControlApp(QMainWindow):
     # ---------------------------------------------------------------------
     # Command Queue and Executor Thread (for discrete commands)
     # ---------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Command Queue and Worker Thread Methods
+    # -------------------------------------------------------------------------
     def process_commands(self):
         """
-        Continuously processes commands from the queue in a separate thread.
-        This allows non-continuous (discrete) commands to be executed asynchronously.
+        Continuously retrieves and executes commands from the command queue.
+        This runs in a separate thread so that UI responsiveness is maintained.
         """
         while True:
-            command, args, kwargs = self.command_queue.get()
             try:
-                # Execute the command function with its arguments.
+                command, args, kwargs = self.command_queue.get()
                 command(*args, **kwargs)
             except Exception as e:
-                print(f"Error executing command {command.__name__}: {e}")
-            self.command_queue.task_done()
+                logging.error("Error executing command: %s", e)
+            finally:
+                self.command_queue.task_done()
 
     def execute_command(self, command_func, *args, **kwargs):
         """
-        Adds a command to the queue for execution if commands are not currently locked.
+        Adds a command to the command queue for asynchronous execution.
+        If the queue is full, the oldest command is discarded to make room.
         
-        :param command_func: The function representing the command.
-        :param args: Positional arguments for the command.
-        :param kwargs: Keyword arguments for the command.
+        :param command_func: The function representing the drone command.
         """
-        if self.commands_locked:
-            print("Commands are currently locked. Ignoring command.")
-            return
         try:
-            # If the queue is full, remove an old command to make room.
             if self.command_queue.full():
                 try:
                     self.command_queue.get(block=False)
@@ -196,29 +200,46 @@ class DroneControlApp(QMainWindow):
                     pass
             self.command_queue.put((command_func, args, kwargs), block=False)
         except queue.Full:
-            print("Command queue is unexpectedly full.")
+            logging.error("Command queue is unexpectedly full.")
 
     # ---------------------------------------------------------------------
     # Continuous Movement Processing
     # ---------------------------------------------------------------------
     def process_continuous_commands(self):
         """
-        Processes continuous movement commands by sending velocity updates.
-        If no movement is active, it sends a stop command once.
+        Combines the active movement commands and sends a single continuous control command.
+        This allows, for example, moving forward and rotating simultaneously.
         """
-        # If no movement is active, send a stop command if not already sent.
-        if not any(self.active_movement.get(act, False) for act in self.continuous_actions):
-            if not self.last_stop_sent:
-                self.drone_controller.send_continuous_control(0, 0, 0, 0)
-                self.last_stop_sent = True
-            return
-        else:
-            # Reset flag if movement is active.
-            self.last_stop_sent = False
-        # For each active movement command, execute the corresponding command.
-        for action, active in self.active_movement.items():
-            if active and action in self.movement_actions:
-                self.execute_command(self.movement_actions[action])
+        # Calculate combined velocities.
+        lr = 0      # Left/Right
+        fb = 0      # Forward/Backward
+        ud = 0      # Up/Down
+        yaw = 0     # Rotation
+
+        if self.active_movement.get("Left", False):
+            lr -= self.speed
+        if self.active_movement.get("Right", False):
+            lr += self.speed
+        if self.active_movement.get("Forward", False):
+            fb += self.speed
+        if self.active_movement.get("Backward", False):
+            fb -= self.speed
+        if self.active_movement.get("Up", False):
+            ud += self.speed
+        if self.active_movement.get("Down", False):
+            ud -= self.speed
+        if self.active_movement.get("Rotate Left", False):
+            yaw -= self.speed
+        if self.active_movement.get("Rotate Right", False):
+            yaw += self.speed
+
+        # Always send the combined command, even if it is (0,0,0,0).
+        # This keeps the drone in hover mode.
+        self.execute_command(
+            self.drone_controller.send_continuous_control,
+            int(lr), int(fb), int(ud), int(yaw)
+        )
+
 
     def set_active_movement(self, action, state: bool):
         """
@@ -308,7 +329,7 @@ class DroneControlApp(QMainWindow):
             "Temperature": QLabel("0°C"),
             "Height": QLabel("0 cm"),
             "Speed": QLabel("0 cm/s"),
-            "Data Transmitted": QLabel("0 MB"),
+            "Signal Strength": QLabel("N/A"),
             "Flight Duration": QLabel("0 sec"),
         }
         # Add each information row to the layout.
@@ -479,7 +500,7 @@ class DroneControlApp(QMainWindow):
         self.connect_toggle_button.setStyleSheet(
             "font-size: 16px; padding: 10px; background-color: red; color: white;"
         )
-        self.stream_timer.start(50)  # Start the video stream update timer.
+        self.stream_timer.start(33)  # Start the video stream update timer.
         self.connecting_dialog.close()
         print("Drone connected successfully and stream is ON.")
 
@@ -534,6 +555,24 @@ class DroneControlApp(QMainWindow):
             self.consecutive_ping_failures = 0
             if self.connection_notification_label.isVisible():
                 self.connection_notification_label.setVisible(False)
+                
+    def poll_wifi_signal(self):
+        """
+        Continuously polls the drone for its Wi-Fi signal strength.
+        This runs in a separate thread so that it doesn't block the UI.
+        """
+        while True:
+            if self.drone_controller.is_connected:
+                try:
+                    signal = self.drone_controller.get_wifi_signal()
+                    self.wifi_signal = signal
+                except Exception as e:
+                    logging.error("Error querying Wi-Fi signal: %s", e)
+                    self.wifi_signal = "N/A"
+            else:
+                self.wifi_signal = "N/A"
+            time.sleep(1)  # poll every second
+
 
     def ping_drone(self, ip="192.168.10.1", count=1, timeout=1):
         """
@@ -796,8 +835,7 @@ class DroneControlApp(QMainWindow):
 
     def update_ui_stats(self):
         """
-        Retrieves the latest statistics from the drone (battery, temperature, etc.)
-        and updates the UI accordingly.
+        Retrieves the latest statistics from the drone and updates the UI accordingly.
         """
         if not self.drone_controller.is_connected:
             return
@@ -816,9 +854,11 @@ class DroneControlApp(QMainWindow):
             self.info_labels["Temperature"].setText(f"{temperature}°C")
             self.info_labels["Height"].setText(f"{height} cm")
             self.info_labels["Speed"].setText(f"{speed} cm/s")
-            self.info_labels["Data Transmitted"].setText("0 MB")
+            # Update the signal strength (polled in a separate thread)
+            self.info_labels["Signal Strength"].setText(f"{self.wifi_signal}")
         except Exception as e:
             print("Failed to get Tello state:", e)
+
 
     # ---------------------------------------------------------------------
     # Flight Operations (Take Off, Land, etc.)
@@ -960,7 +1000,12 @@ class DroneControlApp(QMainWindow):
           - Calls the superclass's closeEvent.
         """
         self.stop_all_timers()
-        self.disconnect_drone()
+        
+        if self.drone_controller.is_connected:
+            try:
+                self.disconnect_drone()
+            except Exception as e:
+                print(f"Error turning stream off: {e}")
         super().closeEvent(event)
     
     # ---------------------------------------------------------------------
@@ -1038,11 +1083,11 @@ class DroneControlApp(QMainWindow):
         self.ui_timer.stop()
         self.controller_timer.stop()
         self.stream_timer.stop()
-        self.drone_controller.stop_recording()
+        # self.drone_controller.stop_recording()
         self.history_timer.stop()
-        if self.drone_controller.is_connected:
-            try:
-                self.drone_controller.tello.streamoff()
-                print("Tello stream is OFF.")
-            except Exception as e:
-                print(f"Error turning stream off: {e}")
+        # if self.drone_controller.is_connected:
+        #     try:
+        #         self.drone_controller.tello.streamoff()
+        #         print("Tello stream is OFF.")
+        #     except Exception as e:
+        #         print(f"Error turning stream off: {e}")

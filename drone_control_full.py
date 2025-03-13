@@ -75,24 +75,7 @@ def ping_drone(ip="192.168.10.1", count=1, timeout=1) -> bool:
         return False
 
 
-# =============================================================================
-# ExtendedDroneController Class
-# =============================================================================
-class ExtendedDroneController(DroneController):
-    """
-    This class extends the DroneController (from drone_functions.py) by adding a method
-    to retrieve the drone's Wi-Fi signal strength.
-    """
-    def get_wifi_signal(self):
-        """
-        Attempts to retrieve the Wi-Fi signal strength using the Tello's get_wifi() method.
-        Returns the signal value if successful, or None if not supported or if an error occurs.
-        """
-        try:
-            val = self.tello.get_wifi()
-            return val
-        except:
-            return None
+
 
 
 # =============================================================================
@@ -120,9 +103,11 @@ class DroneOperatingPage(QWidget):
         # Create a folder for storing flight data if it doesn't already exist.
         self.flights_folder = os.path.join(self.field_path, "flights")
         os.makedirs(self.flights_folder, exist_ok=True)
+        # Create a Tello drone instance and wrap it with our DroneController for easier management.
+        self.tello = Tello()
+        self.drone_controller = DroneController(self.tello, self.flights_folder)
 
-        # Instantiate the extended drone controller.
-        self.drone_controller = ExtendedDroneController(Tello(), self.flights_folder)
+        
 
         # Initialize state variables for flight duration and battery level.
         self.flight_duration = 0
@@ -436,7 +421,7 @@ class DroneOperatingPage(QWidget):
         Starts the video stream timer and closes the connecting dialog.
         """
         print("[UI] Drone connected successfully!")
-        self.stream_timer.start(50)
+        self.stream_timer.start(33)
         self.connecting_dialog.close()
 
     def handle_connect_error(self, error_message):
@@ -921,13 +906,13 @@ class CircularJoystick(QWidget):
 # =============================================================================
 # Main entry point
 # =============================================================================
-if __name__ == "__main__":
-    # Create the QApplication.
-    app = QApplication(sys.argv)
-    # Define the field path where flight data is stored.
-    field_path = "fields"  # Or wherever you store flight data
-    # Instantiate the full-screen Drone Operating Page.
-    window = DroneOperatingPage(field_path)
-    window.show()
-    # Start the event loop.
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     # Create the QApplication.
+#     app = QApplication(sys.argv)
+#     # Define the field path where flight data is stored.
+#     field_path = "fields"  # Or wherever you store flight data
+#     # Instantiate the full-screen Drone Operating Page.
+#     window = DroneOperatingPage(field_path)
+#     window.show()
+#     # Start the event loop.
+#     sys.exit(app.exec())

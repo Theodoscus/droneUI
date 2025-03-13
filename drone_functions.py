@@ -5,6 +5,8 @@ from djitellopy import Tello
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import QObject, pyqtSignal
 import time
+import logging
+import math
 
 # ---------------------------------------------------------------------
 # DroneController: Handles all direct drone operations.
@@ -69,6 +71,8 @@ class DroneController:
             self.is_connected = True
             if self.count == 1:
                 if self.is_connected:
+                        self.tello.send_command_with_return('setfps high')         # 'high' means 30 fps
+                        self.tello.send_command_with_return('setresolution high')  # 'high' means 720p
                         self.frame_read = self.tello.get_frame_read()
                 else:
                         self.frame_read = None
@@ -91,6 +95,23 @@ class DroneController:
             except Exception as e:
                 print("Error turning off drone stream:", e)
             self.is_connected = False
+            
+    def get_wifi_signal(self):
+        """ 
+        Retrieves the Wi-Fi signal strength from the drone.
+        Returns a string (or numeric value) representing the signal strength.
+        """
+        try:
+            # This method is provided by djitellopy.
+            if self.is_flying:
+                signal = self.tello.query_wifi_signal_noise_ratio()
+                return signal  # could be a number or a string, depending on the SDK version
+            else: 
+                return "N/A"
+        except Exception as e:
+            logging.error("Error getting Wi-Fi signal: %s", e)
+            return "N/A"
+
 
     # ----- Drone State Getters (wrappers) -----
     def get_battery(self):
@@ -106,8 +127,15 @@ class DroneController:
         return self.tello.get_height()
 
     def get_speed_x(self):
-        """Return the current horizontal speed (x-axis) of the drone."""
-        return self.tello.get_speed_x()
+        try:
+            vx = self.tello.get_speed_x()
+            vy = self.tello.get_speed_y()  # Make sure this method exists in your drone API
+            vz = self.tello.get_speed_z()  # Likewise for this method
+            total_speed = math.sqrt(vx**2 + vy**2 + vz**2)
+            return int(total_speed)
+        except Exception as e:
+            logging.error("Error calculating total speed: %s", e)
+            return 0
 
     def get_frame(self):
         """
@@ -145,7 +173,7 @@ class DroneController:
         self.is_recording = True
         output_path = os.path.join(self.current_flight_folder, "flight_video.mp4")
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        self.video_writer = cv2.VideoWriter(output_path, fourcc, 20.0, (self.frame_width, self.frame_height))
+        self.video_writer = cv2.VideoWriter(output_path, fourcc, 30.0, (self.frame_width, self.frame_height))
         print(f"Recording started: {output_path}")
 
     def stop_recording(self):
@@ -161,11 +189,28 @@ class DroneController:
 
     def record_frame(self, frame):
         """
-        Write a single frame to the video file if recording is active.
-        This method should be called each time a new frame is available.
+        Writes a single frame to the video file if recording is active.
+        Converts the frame from RGB to BGR (VideoWriter expects BGR) and ensures a minimum interval 
+        between frames to prevent duplicate presentation timestamps.
         """
         if self.is_recording and self.video_writer is not None:
-            self.video_writer.write(frame)
+            current_time = time.time()
+            # Initialize last_write_time if not already done.
+            if not hasattr(self, 'last_write_time'):
+                self.last_write_time = current_time
+            # Desired interval based on the fps used in VideoWriter (30 fps => ~0.0333 sec).
+            desired_interval = 1.0 / 30.0  
+            # If not enough time has passed, skip writing this frame.
+            if current_time - self.last_write_time < desired_interval:
+                return
+            self.last_write_time = current_time
+            # Convert frame from RGB (drone native) to BGR for VideoWriter.
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            try:
+                self.video_writer.write(frame_bgr)
+            except cv2.error as e:
+                logging.error("Error writing frame: %s", e)
+
 
     # ----- Flight Operations -----
     def takeoff(self):
