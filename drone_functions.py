@@ -12,17 +12,21 @@ import math
 # DroneController: Handles all direct drone operations.
 # ---------------------------------------------------------------------
 class DroneController:
-    """
-    Encapsulates all drone-control functionality independent of the UI.
-    This class wraps connection, movement, flight operations, and video recording.
-    It maintains an internal 'is_flying' flag so that takeoff and landing occur only once.
-    """
+    _instance = None  # Class-level variable for the singleton instance
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(DroneController, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, tello: Tello, flights_folder: str):
-        # Store the Tello instance and the folder where flight data will be saved.
+        # Run initialization only once
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
+
         self.tello = tello
         self.flights_folder = flights_folder
-        
-        
 
         # Connection and recording states.
         self.is_connected = False
@@ -34,53 +38,41 @@ class DroneController:
         self.flight_start_time = None
         self.current_flight_folder = None
 
-        # Video recording parameters (frame dimensions).
+        # Video recording parameters.
         self.frame_width = 960
         self.frame_height = 720
 
-        # Flag to indicate whether the drone is currently flying.
+        # Flag to indicate whether the drone is flying.
         self.is_flying = False
-        self.count = 1
-        
 
     def connect(self):
-        
-        
-        """
-        Connect to the drone and initialize the video stream.
-        It validates the response from the Tello, starts video streaming,
-        and sets the 'is_connected' flag.
-        """
         try:
-            
             raw_response = self.tello.connect()
-            # In some cases the response might be a tuple or list.
             if isinstance(raw_response, (tuple, list)):
                 raw_response = raw_response[0]
             if raw_response is not None:
-                # Decode bytes if necessary.
                 if isinstance(raw_response, bytes):
                     raw_response = raw_response.decode("utf-8")
                 response_str = str(raw_response).strip().strip('"').strip("'")
-                # If the response is not recognized as success, raise an exception.
                 if response_str not in ["ok", "192.168.10.1"]:
                     raise Exception(response_str)
-            # Start the video stream from the drone.
+
             self.tello.streamon()
             time.sleep(2)
             self.is_connected = True
-            if self.count == 1:
-                if self.is_connected:
-                        self.tello.send_command_with_return('setfps high')         # 'high' means 30 fps
-                        self.tello.send_command_with_return('setresolution high')  # 'high' means 720p
-                        self.frame_read = self.tello.get_frame_read()
-                else:
-                        self.frame_read = None
-                
-            self.count+=1
+
+            # Only initialize frame_read if it hasn't been done yet
+            if self.frame_read is None:
+                print("Initializing frame read...")
+                self.tello.send_command_with_return('setfps high')
+                self.tello.send_command_with_return('setresolution high')
+                self.frame_read = self.tello.get_frame_read()
             
+            print("Drone connected successfully.")
+
         except Exception as e:
             raise Exception(f"Drone connection failed: {e}")
+
 
     def disconnect(self):
         """

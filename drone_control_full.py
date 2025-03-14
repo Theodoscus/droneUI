@@ -481,7 +481,8 @@ class DroneOperatingPage(QWidget):
         pygame.quit()
 
         if self.drone_controller.is_connected:
-            self.drone_controller.streamoff()
+            # self.drone_controller.streamoff()
+            
             self.drone_controller.disconnect()
         
         time.sleep(2)
