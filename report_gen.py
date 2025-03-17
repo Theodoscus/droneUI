@@ -245,15 +245,15 @@ class DroneReportApp(QMainWindow):
         info_frame.setStyleSheet("border: 1px solid gray; padding: 10px; background-color: #f1f1f1;")
         info_layout = QVBoxLayout(info_frame)
 
-        self.disease_label = QLabel("Disease: --")
+        self.disease_label = QLabel("Ασθένεια: --")
         self.disease_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
         info_layout.addWidget(self.disease_label)
 
-        self.plant_id_label = QLabel("Plant ID: --")
+        self.plant_id_label = QLabel("ID Φυτού: --")
         self.plant_id_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
         info_layout.addWidget(self.plant_id_label)
 
-        self.confidence_label = QLabel("Confidence: --%")
+        self.confidence_label = QLabel("Βεβαιότητα: --%")
         self.confidence_label.setStyleSheet("font-size: 14px; font-weight: bold; color: black;")
         info_layout.addWidget(self.confidence_label)
 
@@ -357,7 +357,7 @@ class DroneReportApp(QMainWindow):
             if os.path.isdir(os.path.join(self.runs_folder, d)) and d.startswith("run_")
         ]
         if not flight_folders:
-            logging.info("No flight data found.")
+            logging.info("Δεν βρέθηκαν δεδομένα πτήσης.")
             return
 
         flight_folders.sort(reverse=True)
@@ -397,13 +397,13 @@ class DroneReportApp(QMainWindow):
                         if 'conn' in locals():
                             conn.close()
                     if not df_all.empty:
-                        QMessageBox.information(self, "No Data",
-                            "The most recent flight report has no data. Loading previous flight report with data.")
+                        QMessageBox.information(self, "Δεν υπάρχουν δεδομένα",
+                            "Η πιο πρόσφατη πτήση δεν έχει δεδομένα. Θα προβληθεί η πιο πρόσφατη αναφορά πτήσης που περιέχει δεδομένα.")
                         logging.info("Loading older run with data: %s", run_folder)
                         self.load_results(run_folder)
                         return
             # If no run with data is found:
-            QMessageBox.information(self, "No Data", "All reports have no flight data. Returning to homepage.")
+            QMessageBox.information(self, "Δεν υπάρχουν δεδομένα", "Καμία αναφορά δεν έχει δεδομένα πτήσης. Επιστροφή στην αρχική σελίδα.")
             self.go_to_homepage()
 
     def list_previous_runs(self):
@@ -444,23 +444,23 @@ class DroneReportApp(QMainWindow):
         """
         selected_run = self.run_selector.currentText()
         if not selected_run:
-            QMessageBox.warning(self, "No Run Selected", "Please select a run.")
+            QMessageBox.warning(self, "Δεν έχει επιλεγεί πτήση", "Παρακαλώ επιλέξτε πτήση.")
             return
 
         raw_run_name = self.run_name_mapping.get(selected_run)
         if not raw_run_name:
-            QMessageBox.critical(self, "Invalid Run", "The selected run could not be mapped to a valid folder.")
+            QMessageBox.critical(self, "Μη έγκυρη πτήση", "Η επιλεγμένη πτήση δεν αντιστοιχεί σε έγκυρο φάκελο.")
             return
 
         run_folder = os.path.join(self.runs_folder, raw_run_name)
         if not os.path.exists(run_folder):
-            QMessageBox.critical(self, "Invalid Run", f"Run folder does not exist: {run_folder}")
+            QMessageBox.critical(self, "Μη έγκυρη πτήση", f"Ο φάκελος της πτήσης δεν υπάρχει: {run_folder}")
             return
 
         try:
             self.load_results(run_folder)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred while loading the run: {e}")
+            QMessageBox.critical(self, "Σφάλμα", f"Παρουσιάστηκε σφάλμα κατά τη φόρτωση της πτήσης: {e}")
 
     def load_results(self, flight_folder):
         """
@@ -482,14 +482,14 @@ class DroneReportApp(QMainWindow):
             conn = sqlite3.connect(db_path)
             df_all = pd.read_sql_query("SELECT * FROM flight_results", conn)
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Unable to read flight_results: {e}")
+            QMessageBox.critical(self, "Σφάλμα Βάσης Δεδομένων", f"Αδύνατη η ανάγνωση των αποτελεσμάτων πτήσης: {e}")
             return
         finally:
             if 'conn' in locals():
                 conn.close()
 
         if df_all.empty:
-            QMessageBox.information(self, "No Data", "No flight results found in the database.")
+            QMessageBox.information(self, "Δεν υπάρχουν δεδομένα", "Δεν βρέθηκαν αποτελέσματα πτήσης στη βάση δεδομένων.")
             return
 
         # Keep highest-confidence row per plant (ID)
@@ -537,12 +537,12 @@ class DroneReportApp(QMainWindow):
         """
         if not os.path.exists(photos_folder):
             logging.info("Photos folder not found: %s", photos_folder)
-            self.placeholder_image.setText("No photos available.")
+            self.placeholder_image.setText("Δεν υπάρχουν διαθέσιμες φωτογραφίες.")
             return
 
         if not os.path.exists(db_path):
             logging.info("Database not found: %s", db_path)
-            self.placeholder_image.setText("No results available.")
+            self.placeholder_image.setText("Δεν υπάρχουν διαθέσιμα αποτελέσματα.")
             return
 
         try:
@@ -556,14 +556,14 @@ class DroneReportApp(QMainWindow):
             """
             df = pd.read_sql_query(query, conn)
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Error reading DB for diseased photos: {e}")
+            QMessageBox.critical(self, "Σφάλμα Βάσης Δεδομένων", f"Σφάλμα κατά την ανάγνωση της βάσης δεδομένων για τις φωτογραφίες ασθενών: {e}")
             return
         finally:
             if 'conn' in locals():
                 conn.close()
 
         if df.empty:
-            self.placeholder_image.setText("No flight results found.")
+            self.placeholder_image.setText("Δεν βρέθηκαν αποτελέσματα πτήσης.")
             return
 
         # Keep only IDs where non-healthy confidence exceeds healthy confidence
@@ -574,7 +574,7 @@ class DroneReportApp(QMainWindow):
             if f.endswith(".jpg") and int(f.split("_ID")[-1].replace(".jpg", "")) in affected_ids
         ]
         if not photo_files:
-            self.placeholder_image.setText("No photos of affected plants available.")
+            self.placeholder_image.setText("Δεν υπάρχουν φωτογραφίες ασθενών φυτών.")
             return
 
         self.photo_files = photo_files
@@ -592,14 +592,14 @@ class DroneReportApp(QMainWindow):
 
         photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])
         if not os.path.exists(photo_file):
-            self.placeholder_image.setText("Photo file not found.")
+            self.placeholder_image.setText("Το αρχείο της φωτογραφίας δεν βρέθηκε.")
             return
 
         # Extract plant ID from photo filename
         try:
             plant_id = int(photo_file.split("_ID")[-1].replace(".jpg", ""))
         except ValueError:
-            self.placeholder_image.setText("Invalid photo filename format.")
+            self.placeholder_image.setText("Μη έγκυρη μορφή ονόματος αρχείου φωτογραφίας.")
             return
 
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
@@ -609,7 +609,7 @@ class DroneReportApp(QMainWindow):
             cursor.execute("SELECT Class, Confidence FROM flight_results WHERE ID=? ORDER BY Confidence DESC LIMIT 1", (plant_id,))
             row = cursor.fetchone()
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Error reading classification data: {e}")
+            QMessageBox.critical(self, "Σφάλμα Βάσης Δεδομένων", f"Σφάλμα κατά την ανάγνωση των δεδομένων ταξινόμησης: {e}")
             return
         finally:
             if 'conn' in locals():
@@ -717,7 +717,7 @@ class DroneReportApp(QMainWindow):
             combined_time = f"{flight_time[1]}_{flight_time[2]}"
             dt = datetime.strptime(combined_time, "%Y%m%d_%H%M%S").strftime("%d/%m/%Y %H:%M:%S")
         except (IndexError, ValueError):
-            dt = "Unknown"
+            dt = "Άγνωστη"
 
         self.flight_time_label.setText(f"ΠΤΗΣΗ: {dt}")
         self.disease_count_label.setText(f"Ασθένειες που εντοπίστηκαν: {diseases}")
@@ -762,16 +762,16 @@ class DroneReportApp(QMainWindow):
           - A table listing only diseased plants with photos
         """
         if not hasattr(self, "current_flight_folder") or not self.current_flight_folder:
-            QMessageBox.warning(self, "Error", "Δεν έχετε επιλέξει πτήση. Φορτώστε δεδομένα πριν την εξαγωγή.")
+            QMessageBox.warning(self, "Σφάλμα", "Δεν έχετε επιλέξει πτήση. Φορτώστε δεδομένα πριν την εξαγωγή.")
             return
 
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
         photos_folder = os.path.join(self.current_flight_folder, "photos")
         if not os.path.exists(db_path):
-            QMessageBox.warning(self, "Error", "Το αρχείο flight_data.db δεν υπάρχει. Αδυναμία εξαγωγής PDF.")
+            QMessageBox.warning(self, "Σφάλμα", "Το αρχείο flight_data.db δεν υπάρχει. Αδυναμία εξαγωγής PDF.")
             return
         if not os.path.exists(photos_folder):
-            QMessageBox.warning(self, "Error", "Ο φάκελος φωτογραφιών δεν υπάρχει. Αδυναμία εξαγωγής PDF.")
+            QMessageBox.warning(self, "Σφάλμα", "Ο φάκελος φωτογραφιών δεν υπάρχει. Αδυναμία εξαγωγής PDF.")
             return
 
         folder_name = os.path.basename(self.current_flight_folder)
@@ -791,14 +791,14 @@ class DroneReportApp(QMainWindow):
             conn = sqlite3.connect(db_path)
             df_all = pd.read_sql_query("SELECT * FROM flight_results", conn)
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Unable to read flight_results for PDF: {e}")
+            QMessageBox.critical(self, "Σφάλμα Βάσης Δεδομένων", f"Αδύνατη η ανάγνωση των αποτελεσμάτων πτήσης για το PDF: {e}")
             return
         finally:
             if 'conn' in locals():
                 conn.close()
 
         if df_all.empty:
-            QMessageBox.warning(self, "No Data", "No flight results found for PDF export.")
+            QMessageBox.warning(self, "Δεν υπάρχουν δεδομένα", "Δεν βρέθηκαν αποτελέσματα πτήσης για εξαγωγή PDF.")
             return
 
         # Keep only the highest-confidence record per plant (ID)
@@ -890,7 +890,7 @@ class DroneReportApp(QMainWindow):
 
         try:
             doc.build(elements)
-            QMessageBox.information(self, "Επιτυχία", f"PDF αποθηκεύτηκε στο: {pdf_path}")
+            QMessageBox.information(self, "Επιτυχία", f"Το PDF αποθηκεύτηκε στο: {pdf_path}")
         except Exception as e:
             QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία δημιουργίας PDF: {e}")
         finally:
@@ -962,7 +962,7 @@ class DroneReportApp(QMainWindow):
         detected in the current flight.
         """
         if not getattr(self, "current_flight_folder", None):
-            QMessageBox.warning(self, "Σφάλμα", "No flight folder loaded.")
+            QMessageBox.warning(self, "Σφάλμα", "Δεν φορτώθηκε φάκελος πτήσης.")
             return
 
         db_path = os.path.join(self.current_flight_folder, "flight_data.db")
@@ -984,7 +984,7 @@ class DroneReportApp(QMainWindow):
             conn = sqlite3.connect(db_path)
             df = pd.read_sql_query(query, conn)
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Error reading DB: {e}")
+            QMessageBox.critical(self, "Σφάλμα Βάσης Δεδομένων", f"Σφάλμα κατά την ανάγνωση της βάσης δεδομένων: {e}")
             return
         finally:
             if 'conn' in locals():
@@ -1010,7 +1010,7 @@ class DroneReportApp(QMainWindow):
         Opens the processed flight video in the OS default media player.
         """
         if not getattr(self, "current_flight_folder", None):
-            logging.info("No flight data loaded.")
+            logging.info("Δεν φορτώθηκαν δεδομένα πτήσης.")
             return
 
         exts = [".mp4", ".mov", ".avi"]
@@ -1022,7 +1022,7 @@ class DroneReportApp(QMainWindow):
                 break
 
         if not video_path:
-            logging.info("Flight video not found.")
+            logging.info("Το βίντεο πτήσης δεν βρέθηκε.")
             return
 
         try:
@@ -1033,9 +1033,9 @@ class DroneReportApp(QMainWindow):
             elif platform.system() == "Linux":
                 subprocess.run(["xdg-open", video_path])
             else:
-                logging.warning("Unsupported OS.")
+                logging.warning("Μη υποστηριζόμενο λειτουργικό σύστημα.")
         except Exception as e:
-            logging.error("Error opening video: %s", e)
+            logging.error("Σφάλμα κατά το άνοιγμα του βίντεο: %s", e)
 
     def open_photos_folder(self):
         """
@@ -1053,7 +1053,7 @@ class DroneReportApp(QMainWindow):
 
         photos_dir = os.path.join(self.field_path, "runs", raw_run_name, "photos")
         if not os.path.exists(photos_dir):
-            QMessageBox.warning(self, "Σφάλμα", "Φάκελος φωτογραφιών δεν βρέθηκε.")
+            QMessageBox.warning(self, "Σφάλμα", "Ο φάκελος φωτογραφιών δεν βρέθηκε.")
             return
 
         try:
@@ -1064,7 +1064,7 @@ class DroneReportApp(QMainWindow):
             elif platform.system() == "Linux":
                 subprocess.run(["xdg-open", photos_dir])
             else:
-                QMessageBox.warning(self, "Σφάλμα", "OS δεν υποστηρίζεται.")
+                QMessageBox.warning(self, "Σφάλμα", "Μη υποστηριζόμενο λειτουργικό σύστημα.")
         except Exception as e:
             QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία ανοίγματος φακέλου: {e}")
             
@@ -1084,7 +1084,7 @@ class DroneReportApp(QMainWindow):
 
         photos_dir = os.path.join(self.field_path, "runs", raw_run_name, "infected_frames")
         if not os.path.exists(photos_dir):
-            QMessageBox.warning(self, "Σφάλμα", "Φάκελος επηρεασμένων περιοχών δεν βρέθηκε.")
+            QMessageBox.warning(self, "Σφάλμα", "Ο φάκελος επηρεασμένων περιοχών δεν βρέθηκε.")
             return
 
         try:
@@ -1095,7 +1095,7 @@ class DroneReportApp(QMainWindow):
             elif platform.system() == "Linux":
                 subprocess.run(["xdg-open", photos_dir])
             else:
-                QMessageBox.warning(self, "Σφάλμα", "OS δεν υποστηρίζεται.")
+                QMessageBox.warning(self, "Σφάλμα", "Μη υποστηριζόμενο λειτουργικό σύστημα.")
         except Exception as e:
             QMessageBox.critical(self, "Σφάλμα", f"Αποτυχία ανοίγματος φακέλου: {e}")
 
@@ -1118,14 +1118,14 @@ class DroneReportApp(QMainWindow):
 
         photo_file = os.path.join(self.photos_folder, self.photo_files[self.photo_index])
         if not os.path.exists(photo_file):
-            logging.info("Photo file not found or invalid.")
+            logging.info("Το αρχείο της φωτογραφίας δεν βρέθηκε ή είναι μη έγκυρο.")
             return
 
         try:
             dlg = ZoomableImageDialog(photo_file, self)
             dlg.exec()
         except ValueError as e:
-            logging.error("Error displaying fullscreen image: %s", e)
+            logging.error("Σφάλμα κατά την προβολή της εικόνας σε πλήρη οθόνη: %s", e)
 
     # ---------------------------------------------------------------------
     # Navigation / Cleanup Methods
@@ -1161,12 +1161,12 @@ class ZoomableImageDialog(QDialog):
             parent: Parent widget.
         """
         super().__init__(parent)
-        self.setWindowTitle("Image Viewer")
+        self.setWindowTitle("Προβολή Εικόνων")
         self.image_path = image_path
 
         self.pixmap = QPixmap(image_path)
         if self.pixmap.isNull():
-            raise ValueError("Error loading image")
+            raise ValueError("Σφάλμα φόρτωσης εικόνας")
 
         layout = QVBoxLayout(self)
         self.graphics_view = QGraphicsView(self)
@@ -1184,7 +1184,7 @@ class ZoomableImageDialog(QDialog):
         self.zoom_slider.valueChanged.connect(self.zoom_image)
         layout.addWidget(self.zoom_slider)
 
-        close_btn = QPushButton("Close", self)
+        close_btn = QPushButton("Κλείσιμο", self)
         close_btn.setStyleSheet("font-size: 14px; background-color: #d9d9d9; color: black; padding: 5px;")
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
