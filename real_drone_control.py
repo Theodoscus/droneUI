@@ -114,8 +114,8 @@ class DroneControlApp(QMainWindow):
             # Discrete commands:
             Qt.Key.Key_Q: "Flip Left",
             Qt.Key.Key_E: "Flip Right",
-            Qt.Key.Key_Return: "Take Off",
-            Qt.Key.Key_P: "Land"
+            Qt.Key.Key_T: "Take Off",
+            Qt.Key.Key_L: "Land"
         }
 
         # Enable keyboard control by default; also prepare a container for control buttons.
@@ -376,7 +376,7 @@ class DroneControlApp(QMainWindow):
         control_buttons = [
             [("Q", "Flip Left"), ("W", "Forward"), ("E", "Flip Right")],
             [("A", "Left"), ("S", "Backward"), ("D", "Right")],
-            [("Enter", "Take Off", "green"), ("P", "Land", "red")],
+            [("T", "Take Off", "green"), ("L", "Land", "red")],
             [("Up Arrow", "Up"), ("Down Arrow", "Down"), ("Left Arrow", "Rotate Left"), ("Right Arrow", "Rotate Right")],
         ]
         # Create buttons for each row and add them to the layout.
