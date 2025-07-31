@@ -63,10 +63,7 @@ Power on your DJI Tello EDU
 Connect your computer to its Wi-Fi network
 
 ### 4. Launch the system
-bash
-Copy
-Edit
-python homepage.py
+run python homepage.py
 
 ---
 
@@ -99,6 +96,8 @@ Inspection time was reduced by over 50%
 Detection accuracy was comparable or higher
 
 Farmers rated the system highly in terms of usability and usefulness
+
+![CE2C5F49-3CA9-426F-9450-BA1E63183844_1_102_o](https://github.com/user-attachments/assets/bb64ab6e-5248-4390-ae53-36fbc813d85c)
 
 ## ✉️ Contact
 Theodosis Chronopoulos
