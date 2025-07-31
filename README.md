@@ -97,7 +97,7 @@ Key findings:
 
 Inspection time was reduced by over 50%
 
-Detection accuracy was comparable or higher
+Detection accuracy was much higher than the traditional inspection method
 
 Farmers rated the system highly in terms of usability and usefulness
 
