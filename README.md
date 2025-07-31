@@ -70,6 +70,8 @@ run python homepage.py
 ## 🧠 YOLOv11 Model
 The model yolol100.pt is a YOLOv11-based object detector trained on a custom tomato dataset. It recognizes leaf diseases with high accuracy, even under varied lighting and conditions.
 
+<img width="1856" height="1391" alt="2025-05-31_132832" src="https://github.com/user-attachments/assets/2e2fc0f0-16cb-46a1-8091-b92c134a790b" />
+
 Frame analysis is triggered after the flight session ends and uses video_process.py to extract, detect, and store infected frames.
 
 ---
@@ -87,6 +89,8 @@ Suggested treatments
 
 The system keeps track of each field’s health history across time.
 
+<img width="1856" height="1391" alt="2025-05-31_132832" src="https://github.com/user-attachments/assets/5e38b312-92d6-4001-8cb1-9fae9223709e" />
+
 ## 📄 Thesis Summary
 The system was evaluated in both controlled and real-world settings, with farmers comparing it to traditional inspection methods.
 Key findings:
@@ -97,10 +101,8 @@ Detection accuracy was comparable or higher
 
 Farmers rated the system highly in terms of usability and usefulness
 
-![CE2C5F49-3CA9-426F-9450-BA1E63183844_1_102_o](https://github.com/user-attachments/assets/bb64ab6e-5248-4390-ae53-36fbc813d85c)
-
 ## ✉️ Contact
 Theodosis Chronopoulos
 📧 theodosis2004@gmail.com
-###📍 University of Patras – Computer Engineering & Informatics Department
+📍 University of Patras – Computer Engineering & Informatics Department
 
