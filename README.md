@@ -89,7 +89,7 @@ Suggested treatments
 
 The system keeps track of each field’s health history across time.
 
-<img width="1856" height="1391" alt="2025-05-31_132832" src="https://github.com/user-attachments/assets/5e38b312-92d6-4001-8cb1-9fae9223709e" />
+<img width="1200" height="1501" alt="2025-05-31_133257" src="https://github.com/user-attachments/assets/c886adc8-89a0-4ca5-9832-7c253d6e4524" />
 
 ## 📄 Thesis Summary
 The system was evaluated in both controlled and real-world settings, with farmers comparing it to traditional inspection methods.
