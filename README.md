@@ -103,6 +103,6 @@ Farmers rated the system highly in terms of usability and usefulness
 
 ## ✉️ Contact
 Theodosis Chronopoulos
-📧 theodosis2004@gmail.com
+📧 theodoschr@gmail.com
 📍 University of Patras – Computer Engineering & Informatics Department
 
