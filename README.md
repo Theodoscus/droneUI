@@ -102,7 +102,7 @@ Detection accuracy was much higher than the traditional inspection method
 Farmers rated the system highly in terms of usability and usefulness
 
 ## ✉️ Contact
-Theodosis Chronopoulos
+Theodosios Chronopoulos
 📧 theodoschr@gmail.com
 📍 University of Patras – Computer Engineering & Informatics Department
 
