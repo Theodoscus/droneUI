@@ -1,108 +1,283 @@
-# 🚁 DroneUI – Smart Drone System for Tomato Disease Detection
+# AgroDrone Tomato Disease Detection
 
-This repository contains the implementation of my master thesis at the **Computer Engineering & Informatics Department**, University of Patras.
+A Python desktop application for controlling a DJI Tello EDU drone, recording crop-surveillance flights, detecting tomato leaf diseases with a YOLO model, and generating field-specific flight reports.
 
-🎓 **Thesis Title**:  
-**Development and evaluation of a drone system user interface with artificial intelligence for the detection of phytopathological diseases in tomato crops**
-
-👨‍💻 Author: Theodosios Chronopoulos  
-📅 Year: 2025  
-🎓 Supervisor: Prof. Michalis Xenos
-🎓 Co-supervisor: PhD Candidate Dimosthenis Minas
+The system is designed around a simple workflow: create or select a field, fly the drone over the crop area, record the flight video, process the video with an object-detection model, and review the results through visual reports, charts, detected-plant photos, and suggested countermeasures.
 
 ---
 
-## 📌 Overview
+## Overview
 
-This project presents a low-cost, user-friendly system for **tomato crop surveillance using a DJI Tello EDU drone and AI-based analysis**. A custom-built **Python GUI (PyQt6)** allows manual drone control, video capture, real-time disease detection using **YOLOv11**, and the generation of detailed flight reports.
+This project was developed as part of a thesis project at the Department of Computer Engineering and Informatics, University of Patras.
 
-🔍 The system was tested with **real farmers**, comparing its effectiveness against traditional visual inspection, and showed promising results in both speed and detection accuracy.
+The application combines drone control, graphical user interface design, computer vision, and report generation. It provides a PyQt6 interface that allows the user to manage crop fields, connect to a DJI Tello EDU drone, manually control the drone, record video during flight, process the recorded video using a YOLO model, and store the analysis results for later review.
 
----
-
-## 🚀 Features
-
-- 🧭 **Manual Drone Flight** via keyboard/GUI/Controller
-- 🎥 **Video Capture & Frame Extraction**
-- 🧠 **Disease Detection** on tomato leaves using YOLOv11 (`yolol100.pt`)
-- 📈 **Progress Monitoring** of each field over time
-- 📄 **PDF Flight Report Generation** with results and stats
-- 🗃️ **Field-specific Folder & Data Management**
-- 💊 **Suggested Countermeasures** for each disease
+The main use case is tomato crop monitoring and early identification of possible leaf diseases.
 
 ---
 
-| Category                 | Technology / Tool                                          | Description                                                             |
-| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------|
-| **Programming Language** | Python 3.10+                                               | Core language used for development                                      |
-| **Drone SDK**            | [`djitellopy`](https://github.com/damiafuentes/DJITelloPy) | Python library to control the DJI Tello EDU                             |
-| **GUI Framework**        | PyQt6                                                      | For building the interactive user interface                             |
-| **Video Processing**     | OpenCV, NumPy                                              | For real-time video frame extraction and manipulation                   |
-| **AI / Detection**       | YOLOv11 (via Ultralytics) – `yolol100.pt`, PyTorch         | Custom-trained object detection model for tomato leaf disease detection |
-| **PDF Report Gen.**      | FPDF, Matplotlib, custom logic                             | For generating user-friendly flight reports                             |
-| **Data Storage**         | Folder-based storage & SQLite (embedded)                   | Field progress, detection logs, and session data                        |
-| **Graphics & Fonts**     | PNG logos, `arial_greek.ttf`                               | For UI elements and Greek text compatibility in reports                 |
+## Main Features
+
+### Field Management
+
+The application starts from a home page where the user can:
+
+* Create a new field
+* Select an existing field
+* Open the drone control screen for the selected field
+* View flight history when previous runs exist
+
+Each field is stored as a separate folder under the `fields/` directory. Flight videos, processed runs, images, databases, and summaries are organized inside the selected field folder.
 
 ---
 
-## 🧪 How to Run
+### DJI Tello EDU Drone Control
 
-### 1. Clone the repository
-git clone https://github.com/Theodoscus/droneUI.git
-cd droneUI
+The drone control module connects to a DJI Tello EDU drone using the `djitellopy` library.
 
-### 2. Install dependencies
-Copy
-Edit
-pip install -r requirements.txt
-Make sure you also have PyTorch installed with GPU support if available.
+The interface supports:
 
-### 3. Connect to the drone
-Power on your DJI Tello EDU
+* Drone connection handling
+* Live video stream display
+* Takeoff and landing
+* Emergency landing
+* Keyboard control
+* Joystick/controller support
+* Continuous movement commands
+* Battery, height, temperature, speed, and signal monitoring
+* Full-screen and windowed control modes
 
-Connect your computer to its Wi-Fi network
-
-### 4. Launch the system
-run python homepage.py
+The application sends movement commands asynchronously so that the interface remains responsive while the drone is being controlled.
 
 ---
 
-## 🧠 YOLOv11 Model
-The model yolol100.pt is a YOLOv11-based object detector trained on a custom tomato dataset. It recognizes leaf diseases with high accuracy, even under varied lighting and conditions.
+### Flight Video Recording
+
+When a flight starts, the system creates a timestamped flight folder and records the drone video stream as an `.mp4` file.
+
+A typical flight folder contains the raw flight video and is later connected with the processed detection results.
+
+---
+
+### YOLO-Based Disease Detection
+
+After a flight ends, the recorded video is processed using a YOLO model stored as:
+
+```text
+yolol100.pt
+```
+
+The video processing module:
+
+* Loads the YOLO model
+* Reads the recorded flight video
+* Processes frames in batches
+* Tracks detected plants across frames
+* Assigns object IDs
+* Draws bounding boxes and class labels
+* Saves detection data to SQLite
+* Exports cropped plant images
+* Saves the most important infected frames
+* Generates an annotated processed video
+
+The detected classes include healthy plants and multiple tomato disease categories.
 
 <img width="1856" height="1391" alt="2025-05-31_132832" src="https://github.com/user-attachments/assets/2e2fc0f0-16cb-46a1-8091-b92c134a790b" />
 
-Frame analysis is triggered after the flight session ends and uses video_process.py to extract, detect, and store infected frames.
+---
+
+### SQLite Flight Results
+
+Each processed run stores its detection results in a local SQLite database.
+
+The `flight_results` table stores information such as:
+
+* Frame number
+* Tracked object ID
+* Detected class
+* Bounding box
+* Confidence score
+* Flight duration
+
+The project also creates a field-level database that summarizes the results across multiple flights of the same field.
 
 ---
 
-## 📊 Reports & Field Monitoring
-After each flight, a PDF report is generated with:
-
-List of detected diseases
-
-Annotated images
-
-Disease stats and frequency
-
-Suggested treatments
-
-The system keeps track of each field’s health history across time.
+### Flight Reports
 
 <img width="1200" height="1501" alt="2025-05-31_133257" src="https://github.com/user-attachments/assets/c886adc8-89a0-4ca5-9832-7c253d6e4524" />
 
-## 📄 Thesis Summary
-The system was evaluated in both controlled and real-world settings, with farmers comparing it to traditional inspection methods.
-Key findings:
+The report module allows the user to review previous flight results.
 
-Inspection time was reduced by over 50%
+It displays:
 
-Detection accuracy was much higher than the traditional inspection method
+* Flight date and time
+* Flight duration
+* Disease/class counts
+* Bar charts
+* Photos of detected plants
+* Detection confidence values
+* Field progress information
 
-Farmers rated the system highly in terms of usability and usefulness
+The system can also export a Greek-enabled PDF flight report using ReportLab.
 
-## ✉️ Contact
-Theodosios Chronopoulos
-📧 theodoschr@gmail.com
-📍 University of Patras – Computer Engineering & Informatics Department
+The generated PDF includes:
+
+* Field name
+* Flight date
+* Flight duration
+* Total detected plants
+* Disease distribution chart
+* Table of diseased plants
+* Detection confidence
+* Related plant photos
+
+---
+
+### Field Progress Monitoring
+
+The field progress page reads the field-level SQLite database and visualizes the health status of a field over time.
+
+It uses previous flight summaries to compare healthy plants and total detected plants across different runs.
+
+This helps the user observe whether the field condition improves or worsens over time.
+
+---
+
+### Suggested Countermeasures
+
+The application includes a countermeasures window that displays suggested actions for detected tomato diseases.
+
+It also allows the user to save personal notes related to a flight. These notes are stored in the flight database and can be reviewed later.
+
+---
+
+## Tech Stack
+
+| Technology                 | Purpose                                             |
+| -------------------------- | --------------------------------------------------- |
+| Python                     | Main programming language                           |
+| PyQt6                      | Desktop graphical user interface                    |
+| DJI Tello SDK / djitellopy | Drone connection and control                        |
+| OpenCV                     | Video recording, frame processing, image annotation |
+| Ultralytics YOLO           | Plant and disease detection                         |
+| PyTorch                    | Deep learning backend used by YOLO                  |
+| SQLite                     | Local storage of flight and field results           |
+| Pandas                     | Reading and processing result data                  |
+| Matplotlib                 | Charts and visual summaries                         |
+| ReportLab                  | PDF flight report generation                        |
+| Pygame                     | Joystick/controller input support                   |
+
+---
+
+## Project Structure
+
+```text
+agrodrone-tomato-disease-detection/
+├── homepage.py              # Main field selection and navigation screen
+├── real_drone_control.py    # Main windowed drone-control interface
+├── drone_control_full.py    # Full-screen drone-control interface
+├── drone_functions.py       # DJI Tello connection, control, recording, and telemetry logic
+├── video_process.py         # YOLO video processing and SQLite result storage
+├── report_gen.py            # Flight history, charts, photos, countermeasures, and PDF reports
+├── field_progress.py        # Field-level health progress visualization
+├── countermeasures.py       # Suggested countermeasures and personal notes
+├── shared.py                # Shared navigation helpers between windows
+├── requirements.txt         # Python dependencies
+├── yolol100.pt              # YOLO model weights
+├── arial_greek.ttf          # Font used for Greek PDF generation
+├── logos/                   # UI logos and images
+└── Chronopoulos-Thesis.pdf  # Thesis document
+```
+
+---
+
+## How the Application Works
+
+1. The user opens the application from `homepage.py`.
+2. The user creates or selects a field.
+3. The application opens the drone-control interface for the selected field.
+4. The user connects to the DJI Tello EDU drone.
+5. The user controls the drone manually through keyboard, GUI buttons, or a controller.
+6. During flight, the system records video from the drone stream.
+7. After landing, the recorded video is processed using the YOLO model.
+8. Detection results are stored in a run-specific SQLite database.
+9. Annotated videos, cropped plant images, and infected frames are saved.
+10. The user reviews the flight results through the report screen.
+11. The user can export a PDF report and view field progress over time.
+
+---
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Theodoscus/droneUI.git
+cd droneUI
+```
+
+### 2. Create a Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+Activate it:
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+If you want GPU acceleration for YOLO, install the appropriate PyTorch version for your CUDA setup separately.
+
+---
+
+## Running the Application
+
+Power on the DJI Tello EDU drone and connect your computer to the drone's Wi-Fi network.
+
+Then run:
+
+```bash
+python homepage.py
+```
+
+The application will open the field-selection screen.
+
+---
+
+## Requirements
+
+The project dependencies include:
+
+* `djitellopy`
+* `PyQt6`
+* `opencv_python`
+* `ultralytics`
+* `pygame`
+* `pandas`
+* `matplotlib`
+* `reportlab`
+* `tqdm`
+
+The repository also includes the model file `yolol100.pt`, which is required by the video-processing module.
+
+---
+
+## License
+
+This project was developed for academic and research purposes.
+
+Theodosios Chronopoulos || 📧 theodoschr@gmail.com || 📍 University of Patras – Computer Engineering & Informatics Department
 
